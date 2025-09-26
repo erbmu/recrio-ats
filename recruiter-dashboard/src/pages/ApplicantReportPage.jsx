@@ -1,14 +1,53 @@
-// src/pages/ApplicantReportPage.jsx
 import React from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import Layout from "../components/Layout";
+import { api } from "../api/client";
 
-const ApplicantReportPage = () => {
+const Card = ({ title, value }) => (
+  <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+    <p className="text-sm text-gray-500">{title}</p>
+    <p className="text-xl font-semibold text-gray-900 mt-1">{value}</p>
+  </div>
+);
+
+const pctOrNA = (v) => {
+  if (v == null) return "N/A";
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return "N/A";
+  const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
+  return `${pct}/100`;
+};
+
+export default function ApplicantReportPage() {
   const { jobId, applicantId } = useParams();
   const navigate = useNavigate();
 
+  const [app, setApp] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [err, setErr] = React.useState("");
+
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setErr("");
+        const data = await api(`/api/applications/${applicantId}`);
+        if (!mounted) return;
+        setApp(data || null);
+      } catch (e) {
+        if (mounted) setErr(e.message || "Failed to load applicant");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [applicantId]);
+
+  const scores = app?.ai_scores || {};
+  const summary = app?.ai_summary || "AI report will appear here after parsing (mock).";
+
   return (
-    <Layout>
+    <div>
       <div className="mb-6">
         <button
           onClick={() => navigate(-1)}
@@ -17,86 +56,83 @@ const ApplicantReportPage = () => {
           ← Back
         </button>
         <h1 className="text-2xl font-semibold text-gray-900">
-          Applicant Report: {applicantId}
+          Applicant Report: {app?.candidate_name || applicantId}
         </h1>
-        <p className="text-sm text-gray-500">For job ID: {jobId}</p>
+        {/* subtle subtitle with job title if available (no job id shown) */}
+        {app?.job_title && (
+          <p className="text-sm text-gray-500">For {app.job_title}</p>
+        )}
       </div>
 
-      {/* Summary scores */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <p className="text-sm text-gray-500">Business Impact</p>
-          <p className="text-xl font-semibold text-gray-900 mt-1">8/10</p>
+      {err && (
+        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {err}
         </div>
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <p className="text-sm text-gray-500">Technical Accuracy</p>
-          <p className="text-xl font-semibold text-gray-900 mt-1">9/10</p>
+      )}
+
+      {loading || !app ? (
+        <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-gray-600 bg-white">
+          {loading ? "Loading…" : "Not found"}
         </div>
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <p className="text-sm text-gray-500">Communication</p>
-          <p className="text-xl font-semibold text-gray-900 mt-1">7/10</p>
-        </div>
-      </div>
+      ) : (
+        <>
+          {/* Summary scores */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
+            <Card title="Business Impact" value={pctOrNA(scores.business_impact)} />
+            <Card title="Technical Accuracy" value={pctOrNA(scores.technical_accuracy)} />
+            <Card title="Communication" value={pctOrNA(scores.communication)} />
+          </div>
 
-{/* Career Card Summary */}
-<div className="bg-white border border-gray-200 rounded-lg p-6 mb-10 shadow-sm">
-  <h2 className="text-lg font-semibold text-gray-800 mb-4">Career Card Feedback</h2>
-  <ul className="space-y-3 text-sm text-gray-700 leading-relaxed">
-    <li>
-      <strong className="text-gray-900">Technical Expertise:</strong> Demonstrated strong experience in AI model deployment, MLOps, and API integrations. Portfolio includes 6 GitHub projects with clear documentation and consistent commit history.
-    </li>
-    <li>
-      <strong className="text-gray-900">Communication Skills:</strong> Explains technical concepts with clarity for both technical and non-technical stakeholders. Resume language is concise and aligned with industry expectations.
-    </li>
-    <li>
-      <strong className="text-gray-900">Business Impact:</strong> Past projects indicate potential to drive measurable business value, particularly in optimizing AI workflows and reducing deployment cycles.
-    </li>
-    <li>
-      <strong className="text-gray-900">Growth Areas:</strong> Could expand exposure to security best practices in AI systems and large-scale distributed training.
-    </li>
-  </ul>
-</div>
+          {/* Career Card Summary */}
+          <div className="bg-white border border-gray-200 rounded-lg p-6 mb-10 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-800 mb-4">Career Card Feedback</h2>
+            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+              {summary}
+            </p>
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-600">
+              <div><span className="text-gray-500">Name:</span> {app.candidate_name || "—"}</div>
+              <div><span className="text-gray-500">Email:</span> {app.candidate_email || "—"}</div>
+              {app.current_title && (
+                <div><span className="text-gray-500">Current title:</span> {app.current_title}</div>
+              )}
+              {(app.city || app.country) && (
+                <div>
+                  <span className="text-gray-500">Location:</span>{" "}
+                  {[app.city, app.country].filter(Boolean).join(", ")}
+                </div>
+              )}
+            </div>
+          </div>
 
-{/* Simulation Summary */}
-<div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-  <h2 className="text-lg font-semibold text-gray-800 mb-4">Simulation Report</h2>
-  <p className="text-gray-700 text-sm leading-relaxed mb-4">
-    The applicant completed a 5-scenario simulation tailored to the AI Engineer role:
-  </p>
-  <ol className="list-decimal list-inside space-y-2 text-sm text-gray-700">
-    <li>
-      <strong>Scenario 1 – Model Optimization:</strong> Selected appropriate trade-offs between accuracy and inference time, explaining rationale clearly.
-    </li>
-    <li>
-      <strong>Scenario 2 – Production Incident:</strong> Applied structured troubleshooting and rapid rollback strategies.
-    </li>
-    <li>
-      <strong>Scenario 3 – Stakeholder Briefing:</strong> Delivered concise, impactful updates without overloading technical jargon.
-    </li>
-    <li>
-      <strong>Scenario 4 – Budget Constraints:</strong> Proposed cost-effective deployment without compromising core functionality.
-    </li>
-    <li>
-      <strong>Scenario 5 – Ethical AI Decision:</strong> Displayed awareness of bias mitigation strategies and compliance requirements.
-    </li>
-  </ol>
-  <br /> {/* ← Empty line */}
+          {/* Simulation Summary placeholder */}
+          <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-800 mb-4">Simulation Report</h2>
+            <p className="text-gray-700 text-sm leading-relaxed">
+              The applicant’s simulation breakdown and transcripts will appear here when your
+              simulation pipeline posts results. Until then, the category-wise scores above and the
+              career-card feedback serve as the summary.
+            </p>
 
-    {/* New breakdown added below */}
-  <ul className="list-disc pl-5 space-y-2 text-sm text-gray-700">
-    <li><span className="font-medium">Business Impact:</span> Showed strong understanding of how technical actions affect client outcomes.</li>
-    <li><span className="font-medium">Technical Accuracy:</span> Applied correct methodologies but occasionally missed deeper technical nuances.</li>
-    <li><span className="font-medium">Trade-off Analysis:</span> Weighed pros and cons of solutions, though reasoning was sometimes surface-level.</li>
-    <li><span className="font-medium">Constraint Management:</span> Adapted approach effectively when faced with time and resource limitations.</li>
-    <li><span className="font-medium">Communication Skills:</span> Presented ideas clearly, though could improve in summarizing complex issues concisely.</li>
-  </ul>
-
-  <p className="text-sm text-gray-500 italic mt-4">
-    Transcript not available in this mock. Final product will include full AI-generated transcripts and category-wise scoring.
-  </p>
-</div>
-    </Layout>
+            {(app.files?.career_card || app.files?.resume) && (
+              <div className="mt-6">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Submitted files</h3>
+                <ul className="text-sm text-gray-700 space-y-1">
+                  {app.files?.career_card && (
+                    <li>
+                      Career Card — {app.files.career_card.name} ({app.files.career_card.mime})
+                    </li>
+                  )}
+                  {app.files?.resume && (
+                    <li>
+                      Resume — {app.files.resume.name} ({app.files.resume.mime})
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
-};
-
-export default ApplicantReportPage;
+}

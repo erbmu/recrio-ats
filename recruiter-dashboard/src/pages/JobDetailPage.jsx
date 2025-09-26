@@ -1,67 +1,150 @@
-// src/pages/JobDetailPage.jsx
 import React from "react";
-import { useParams } from "react-router-dom";
-import Layout from "../components/Layout";
-import { useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
+import { api } from "../api/client";
 
-const dummyApplicants = [
-  { id: "1", name: "Jane Doe", rank: 1, aiScore: 92 },
-  { id: "2", name: "John Smith", rank: 2, aiScore: 89 },
-  { id: "3", name: "Priya Patel", rank: 3, aiScore: 84 },
-];
+const TableCell = ({ children, className = "" }) => (
+  <td className={`px-4 py-3 text-sm text-gray-800 ${className}`}>{children}</td>
+);
 
-const JobDetailPage = () => {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  return (
-    <Layout>
-      <div className="flex items-center justify-between mb-6">
-            <div className="mb-6">
-            <button
-                onClick={() => navigate(-1)}
-                className="text-sm text-gray-600 hover:text-gray-800 hover:underline transition mb-2"
-            >
-                ← Back
-            </button>
-
-            <h1 className="text-2xl font-semibold text-gray-900">
-                Applicants for: {id}
-            </h1>
-            </div>
-        </div>
-
-
-      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 text-gray-600 text-left">
-            <tr>
-              <th className="px-6 py-3">Rank</th>
-              <th className="px-6 py-3">Name</th>
-              <th className="px-6 py-3">AI Score</th>
-              <th className="px-6 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100 text-gray-700">
-            {dummyApplicants.map((applicant) => (
-              <tr key={applicant.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 font-medium">{applicant.rank}</td>
-                <td className="px-6 py-4">{applicant.name}</td>
-                <td className="px-6 py-4">{applicant.aiScore}%</td>
-                <td className="px-6 py-4">
-                  <button
-                    onClick={() => navigate(`/dashboard/job/${id}/applicant/${applicant.id}`)}
-                    className="text-sm text-blue-600 hover:underline"
-                    >
-                    View Report
-                    </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Layout>
-  );
+const formatScore = (ai_scores) => {
+  if (!ai_scores) return "—";
+  const v = ai_scores.overall ?? ai_scores.score ?? null;
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return "—";
+  const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
+  return `${pct}%`;
 };
 
-export default JobDetailPage;
+export default function JobDetailPage() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+
+  const [apps, setApps] = React.useState([]);
+  const [jobTitle, setJobTitle] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
+  const [err, setErr] = React.useState("");
+
+  // Load applicants
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setErr("");
+        const data = await api(`/api/applications/job/${id}`);
+        if (!mounted) return;
+        setApps(Array.isArray(data) ? data : []);
+      } catch (e) {
+        if (mounted) setErr(e.message || "Failed to load applicants");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [id]);
+
+  // Load job title with multiple safe fallbacks
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const loadTitle = async () => {
+      // 1) Try lightweight meta endpoint
+      try {
+        const meta = await api(`/api/jobs/${id}/meta`);
+        if (!cancelled && meta?.title) {
+          setJobTitle(meta.title);
+          return;
+        }
+      } catch {}
+
+      // 2) Try full job by id (if available on your API)
+      try {
+        const j = await api(`/api/jobs/${id}`);
+        if (!cancelled && j?.title) {
+          setJobTitle(j.title);
+          return;
+        }
+      } catch {}
+
+      // 3) As a last resort, if we have any applicant, fetch that single app to read job_title
+      try {
+        if (apps.length > 0) {
+          const first = await api(`/api/applications/${apps[0].id}`);
+          if (!cancelled && first?.job_title) {
+            setJobTitle(first.job_title);
+            return;
+          }
+        }
+      } catch {}
+
+      // 4) Fallback label
+      if (!cancelled) setJobTitle(`job-${id}`);
+    };
+
+    loadTitle();
+    return () => { cancelled = true; };
+  }, [id, apps]);
+
+  return (
+    <div>
+      <div className="mb-4">
+        <button
+          onClick={() => navigate(-1)}
+          className="inline-flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
+        >
+          ← Back
+        </button>
+      </div>
+
+      <h1 className="text-2xl font-semibold text-gray-900 mb-4">
+        Applicants for: {jobTitle || `job-${id}`}
+      </h1>
+
+      {err && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {err}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-gray-600 bg-white">
+          Loading applicants…
+        </div>
+      ) : apps.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-gray-600 bg-white">
+          No applicants yet.
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <table className="min-w-full">
+            <thead className="bg-gray-50 text-gray-600 text-sm">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium">Rank</th>
+                <th className="px-4 py-3 text-left font-medium">Name</th>
+                <th className="px-4 py-3 text-left font-medium">AI Score</th>
+                <th className="px-4 py-3 text-left font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {apps.map((a, idx) => (
+                <tr key={a.id} className="hover:bg-gray-50">
+                  <TableCell className="w-24">{idx + 1}</TableCell>
+                  <TableCell>{a.candidate_name || "Applicant"}</TableCell>
+                  <TableCell className="w-40">{formatScore(a.ai_scores)}</TableCell>
+                  <TableCell className="w-40">
+                    <button
+                      onClick={() => navigate(`/dashboard/job/${id}/applicant/${a.id}`)}
+                      className="text-blue-600 hover:underline"
+                    >
+                      View Report
+                    </button>
+                  </TableCell>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
