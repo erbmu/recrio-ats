@@ -1,4 +1,4 @@
-// src/pages/HomePage.jsx
+// client/src/pages/HomePage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 
@@ -15,15 +15,11 @@ function useApplicationsTimeSeries(jobs) {
 
     (async () => {
       try {
-        // Fetch applicants for each job (parallel), then flatten
         const lists = await Promise.all(
-          jobs.map((j) =>
-            api(`/api/applications/job/${j.id}`).catch(() => [])
-          )
+          jobs.map((j) => api(`/api/applications/job/${j.id}`).catch(() => []))
         );
-
         const all = lists.flat();
-        // Build a map YYYY-MM-DD -> count
+
         const byDay = new Map();
         for (const a of all) {
           const d = new Date(a.created_at);
@@ -32,26 +28,18 @@ function useApplicationsTimeSeries(jobs) {
           byDay.set(key, (byDay.get(key) || 0) + 1);
         }
 
-        // Last 30 days timeline (inclusive of today)
         const days = [];
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const today = new Date(); today.setHours(0, 0, 0, 0);
         for (let i = 29; i >= 0; i--) {
-          const d = new Date(today);
-          d.setDate(today.getDate() - i);
+          const d = new Date(today); d.setDate(today.getDate() - i);
           const key = d.toISOString().slice(0, 10);
           days.push({ date: key, count: byDay.get(key) || 0 });
         }
 
-        // 7-day rolling average
         const window = 7;
         for (let i = 0; i < days.length; i++) {
-          let sum = 0;
-          let n = 0;
-          for (let k = Math.max(0, i - (window - 1)); k <= i; k++) {
-            sum += days[k].count;
-            n++;
-          }
+          let sum = 0; let n = 0;
+          for (let k = Math.max(0, i - (window - 1)); k <= i; k++) { sum += days[k].count; n++; }
           days[i].avg7 = sum / n;
         }
 
@@ -71,30 +59,23 @@ function useApplicationsTimeSeries(jobs) {
 }
 
 function AreaBarChart({ data, maxY }) {
-  // SVG sizes
-  const height = 220; // fits your card
+  const height = 220;
   const padding = { top: 16, right: 12, bottom: 28, left: 32 };
-  const width = 600; // responsive via viewBox
+  const width = 600;
   const innerW = width - padding.left - padding.right;
   const innerH = height - padding.top - padding.bottom;
 
-  // Scales
   const n = data.length;
   const xStep = innerW / Math.max(1, n - 1);
   const y = (v) => innerH - (maxY ? (v / maxY) * innerH : 0);
 
-  // Paths
   const lineAvg = data
     .map((d, i) => `${i === 0 ? "M" : "L"} ${padding.left + i * xStep} ${padding.top + y(d.avg7 || 0)}`)
     .join(" ");
 
-  // Bars
-  const barW = Math.max(2, innerW / Math.max(20, n) * 0.8);
-
-  // X ticks ~ weekly
+  const barW = Math.max(2, (innerW / Math.max(20, n)) * 0.8);
   const ticks = data.map((d, i) => ({ i, d })).filter(({ i }) => i % 7 === 0);
 
-  // Tooltip state
   const [hover, setHover] = useState(null);
   const onMove = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -112,37 +93,20 @@ function AreaBarChart({ data, maxY }) {
   return (
     <div className="relative">
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-56">
-        {/* axes */}
         <line x1={padding.left} y1={padding.top + innerH} x2={padding.left + innerW} y2={padding.top + innerH} stroke="#e5e7eb" />
         <line x1={padding.left} y1={padding.top} x2={padding.left} y2={padding.top + innerH} stroke="#e5e7eb" />
-
-        {/* y-grid (3 lines) */}
         {[1, 2, 3].map((k) => {
           const yy = padding.top + (innerH * k) / 4;
           return <line key={k} x1={padding.left} y1={yy} x2={padding.left + innerW} y2={yy} stroke="#f3f4f6" />;
         })}
-
-        {/* bars */}
         {data.map((d, i) => {
           const x = padding.left + i * xStep - barW / 2;
           const h = innerH - y(d.count);
           return (
-            <rect
-              key={i}
-              x={x}
-              y={padding.top + y(d.count)}
-              width={barW}
-              height={h}
-              rx="2"
-              fill="#e5e7eb"
-            />
+            <rect key={i} x={x} y={padding.top + y(d.count)} width={barW} height={h} rx="2" fill="#e5e7eb" />
           );
         })}
-
-        {/* avg line */}
         <path d={lineAvg} fill="none" stroke="#111827" strokeWidth="2" />
-
-        {/* x-axis ticks & labels */}
         {ticks.map(({ i, d }) => {
           const x = padding.left + i * xStep;
           return (
@@ -154,8 +118,6 @@ function AreaBarChart({ data, maxY }) {
             </g>
           );
         })}
-
-        {/* y-axis labels (0, max/2, max) */}
         {[0, 0.5, 1].map((t, idx) => {
           const val = Math.round(maxY * t);
           const yy = padding.top + y(maxY * t);
@@ -165,21 +127,12 @@ function AreaBarChart({ data, maxY }) {
             </text>
           );
         })}
-
-        {/* hover guide */}
         {hover && (
           <>
             <line x1={hover.x} y1={padding.top} x2={hover.x} y2={padding.top + innerH} stroke="#d1d5db" />
-            <circle
-              cx={hover.x}
-              cy={padding.top + y(data[hover.i].avg7 || 0)}
-              r="3.5"
-              fill="#111827"
-            />
+            <circle cx={hover.x} cy={padding.top + y(data[hover.i].avg7 || 0)} r="3.5" fill="#111827" />
           </>
         )}
-
-        {/* hit area */}
         <rect
           x={padding.left}
           y={padding.top}
@@ -190,8 +143,6 @@ function AreaBarChart({ data, maxY }) {
           onMouseLeave={() => setHover(null)}
         />
       </svg>
-
-      {/* tooltip */}
       {hover && (
         <div
           className="absolute text-xs bg-white border border-gray-200 shadow-sm rounded-md px-2 py-1"
@@ -206,6 +157,38 @@ function AreaBarChart({ data, maxY }) {
   );
 }
 
+/* --------- Tiny horizontal bars for “Top Scoring Jobs” (0..100) ---------- */
+function TopJobsBars({ items }) {
+  if (!items || items.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center text-gray-400 italic">
+        No simulations yet
+      </div>
+    );
+  }
+  const max = Math.max(100, ...items.map((x) => Math.round(x.avg_score || 0)));
+  return (
+    <div className="space-y-3">
+      {items.map((j) => {
+        const pct = Math.round(j.avg_score || 0);
+        const w = `${(pct / max) * 100}%`;
+        return (
+          <div key={j.job_id}>
+            <div className="flex justify-between text-sm text-gray-700">
+              <span className="truncate">{j.job_title}</span>
+              <span className="ml-3 tabular-nums">{pct}%</span>
+            </div>
+            <div className="h-2 bg-gray-100 rounded">
+              <div className="h-2 rounded bg-gray-800" style={{ width: w }} />
+            </div>
+            <div className="text-xs text-gray-500 mt-1">Completed: {j.completed}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* --------------------------------- Page ---------------------------------- */
 export default function HomePage() {
   const [me, setMe] = useState(null);
@@ -213,6 +196,12 @@ export default function HomePage() {
   const [totalApplicants, setTotalApplicants] = useState(0);
   const [jobs, setJobs] = useState([]);
   const [loadingChart, setLoadingChart] = useState(true);
+
+  // NEW metrics
+  const [avgAi, setAvgAi] = useState(null);         // number or null
+  const [simCompleted, setSimCompleted] = useState(0);
+  const [topJobs, setTopJobs] = useState([]);
+  const [loadingMetrics, setLoadingMetrics] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -243,12 +232,35 @@ export default function HomePage() {
         }
       });
 
+    // Fetch AI metrics (avg score, completed count, top jobs)
+    api("/api/applications/metrics/overview")
+      .then((res) => {
+        if (cancelled) return;
+        setAvgAi(
+          typeof res?.avg_final_score === "number" && isFinite(res.avg_final_score)
+            ? res.avg_final_score
+            : null
+        );
+        setSimCompleted(res?.completed_count || 0);
+        setTopJobs(Array.isArray(res?.top_jobs_30d) ? res.top_jobs_30d : []);
+        setLoadingMetrics(false);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAvgAi(null);
+          setSimCompleted(0);
+          setTopJobs([]);
+          setLoadingMetrics(false);
+        }
+      });
+
     return () => { cancelled = true; };
   }, []);
 
   const series = useApplicationsTimeSeries(jobs);
-
   const first = me?.name ? me.name.split(" ")[0] : "Recruiter";
+
+  const fmtAvg = (v) => (v == null ? "—" : `${Math.round(v)}%`);
 
   return (
     <div className="space-y-10">
@@ -276,11 +288,15 @@ export default function HomePage() {
         </div>
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <p className="text-sm text-gray-500">Avg AI Score</p>
-          <p className="text-2xl font-semibold text-gray-900 mt-1">78.2%</p>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">
+            {loadingMetrics ? "…" : fmtAvg(avgAi)}
+          </p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <p className="text-sm text-gray-500">Simulations Completed</p>
-          <p className="text-2xl font-semibold text-gray-900 mt-1">143</p>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">
+            {loadingMetrics ? "…" : simCompleted}
+          </p>
         </div>
       </div>
 
@@ -306,9 +322,11 @@ export default function HomePage() {
           <p className="text-lg font-semibold text-gray-800 mb-4">
             Top Scoring Jobs
           </p>
-          <div className="h-full flex items-center justify-center text-gray-400 italic">
-            (Chart Placeholder)
-          </div>
+          {loadingMetrics ? (
+            <div className="h-full flex items-center justify-center text-gray-400 italic">Loading…</div>
+          ) : (
+            <TopJobsBars items={topJobs} />
+          )}
         </div>
       </div>
     </div>

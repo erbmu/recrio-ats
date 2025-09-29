@@ -1,3 +1,4 @@
+// client/src/pages/JobDetailPage.jsx
 import React from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
@@ -6,9 +7,14 @@ const TableCell = ({ children, className = "" }) => (
   <td className={`px-4 py-3 text-sm text-gray-800 ${className}`}>{children}</td>
 );
 
-const formatScore = (ai_scores) => {
-  if (!ai_scores) return "—";
-  const v = ai_scores.overall ?? ai_scores.score ?? null;
+// Prefer numeric ai_score (0..100). Fallback to ai_scores.* for display.
+const formatScore = (row) => {
+  if (row?.ai_score != null && Number.isFinite(Number(row.ai_score))) {
+    return `${Math.round(Number(row.ai_score))}%`;
+  }
+  const s = row?.ai_scores;
+  if (!s) return "—";
+  const v = s.overall ?? s.score ?? null;
   const n = typeof v === "number" ? v : Number(v);
   if (!Number.isFinite(n)) return "—";
   const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
@@ -24,7 +30,7 @@ export default function JobDetailPage() {
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState("");
 
-  // Load applicants
+  // Load applicants (ranked server-side, now includes ai_score/final_score)
   React.useEffect(() => {
     let mounted = true;
     (async () => {
@@ -48,36 +54,23 @@ export default function JobDetailPage() {
     let cancelled = false;
 
     const loadTitle = async () => {
-      // 1) Try lightweight meta endpoint
       try {
         const meta = await api(`/api/jobs/${id}/meta`);
-        if (!cancelled && meta?.title) {
-          setJobTitle(meta.title);
-          return;
-        }
+        if (!cancelled && meta?.title) { setJobTitle(meta.title); return; }
       } catch {}
 
-      // 2) Try full job by id (if available on your API)
       try {
         const j = await api(`/api/jobs/${id}`);
-        if (!cancelled && j?.title) {
-          setJobTitle(j.title);
-          return;
-        }
+        if (!cancelled && j?.title) { setJobTitle(j.title); return; }
       } catch {}
 
-      // 3) As a last resort, if we have any applicant, fetch that single app to read job_title
       try {
         if (apps.length > 0) {
           const first = await api(`/api/applications/${apps[0].id}`);
-          if (!cancelled && first?.job_title) {
-            setJobTitle(first.job_title);
-            return;
-          }
+          if (!cancelled && first?.job_title) { setJobTitle(first.job_title); return; }
         }
       } catch {}
 
-      // 4) Fallback label
       if (!cancelled) setJobTitle(`job-${id}`);
     };
 
@@ -130,7 +123,7 @@ export default function JobDetailPage() {
                 <tr key={a.id} className="hover:bg-gray-50">
                   <TableCell className="w-24">{idx + 1}</TableCell>
                   <TableCell>{a.candidate_name || "Applicant"}</TableCell>
-                  <TableCell className="w-40">{formatScore(a.ai_scores)}</TableCell>
+                  <TableCell className="w-40">{formatScore(a)}</TableCell>
                   <TableCell className="w-40">
                     <button
                       onClick={() => navigate(`/dashboard/job/${id}/applicant/${a.id}`)}

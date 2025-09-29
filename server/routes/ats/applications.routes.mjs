@@ -110,7 +110,7 @@ const ApplicationSchema = z.object({
 });
 
 /* ------------------------------------------------------------------------- */
-/* POST /api/applications/public/:jobId  (career card & resume optional)      */
+/* POST /api/applications/public/:jobId                                      */
 /* ------------------------------------------------------------------------- */
 
 r.post(
@@ -221,7 +221,7 @@ r.post(
 );
 
 /* ------------------------------------------------------------------------- */
-/* GET /api/applications/job/:jobId (recruiter list, ranked when scores)     */
+/* GET /api/applications/job/:jobId (recruiter list, ranked by AI)           */
 /* ------------------------------------------------------------------------- */
 
 r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
@@ -236,29 +236,38 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
       return res.status(404).json({ error: "not_found" });
     }
 
-    const apps = await db("applications")
-      .where({ job_id: jobId })
-      .orderBy("id", "desc")
+    // Join simulation_feedbacks to obtain final_score when present
+    const rows = await db("applications as a")
+      .leftJoin("simulation_feedbacks as sf", "sf.application_id", "a.id")
+      .where("a.job_id", jobId)
+      .orderBy("a.id", "desc")
       .select(
-        "id",
-        "job_id",
-        "candidate_name",
-        "candidate_email",
-        "status",
-        "ai_summary",
-        "ai_scores",
-        "created_at"
+        "a.id",
+        "a.job_id",
+        "a.candidate_name",
+        "a.candidate_email",
+        "a.status",
+        "a.ai_summary",
+        "a.ai_scores",
+        "a.created_at",
+        "sf.final_score as final_score"
       );
 
-    const parseOverall = (a) => {
-      const v = a?.ai_scores?.overall ?? a?.ai_scores?.score ?? null;
+    // Normalize a single comparable numeric score (0..100).
+    const toScore = (row) => {
+      if (row?.final_score != null && Number.isFinite(Number(row.final_score))) {
+        return Number(row.final_score);
+      }
+      const v = row?.ai_scores?.overall ?? row?.ai_scores?.score ?? null;
       const n = typeof v === "number" ? v : Number(v);
-      return Number.isFinite(n) ? n : null;
+      if (!Number.isFinite(n)) return null;
+      return n <= 1 ? Math.round(n * 100) : Math.round(n);
     };
 
-    apps.sort((a, b) => {
-      const sa = parseOverall(a);
-      const sb = parseOverall(b);
+    // Sort: scored first (desc), then the rest by most recent
+    rows.sort((a, b) => {
+      const sa = toScore(a);
+      const sb = toScore(b);
       if (sa == null && sb == null) return new Date(b.created_at) - new Date(a.created_at);
       if (sa == null) return 1;
       if (sb == null) return -1;
@@ -266,15 +275,17 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
     });
 
     return res.json(
-      apps.map((a) => ({
-        id: a.id,
-        job_id: a.job_id,
-        candidate_name: a.candidate_name,
-        candidate_email: a.candidate_email,
-        status: a.status,
-        ai_summary: a.ai_summary,
-        ai_scores: a.ai_scores,
-        created_at: a.created_at,
+      rows.map((r) => ({
+        id: r.id,
+        job_id: r.job_id,
+        candidate_name: r.candidate_name,
+        candidate_email: r.candidate_email,
+        status: r.status,
+        ai_summary: r.ai_summary,
+        ai_scores: r.ai_scores,        // keep legacy payload
+        final_score: r.final_score,    // NEW (0..100 when available)
+        ai_score: toScore(r),          // NEW normalized numeric 0..100 (or null)
+        created_at: r.created_at,
       }))
     );
   } catch (e) {
@@ -283,7 +294,7 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
 });
 
 /* ------------------------------------------------------------------------- */
-/* GET /api/applications/:id (recruiter view — details + files + events)      */
+/* GET /api/applications/:id (recruiter details)                              */
 /* ------------------------------------------------------------------------- */
 
 r.get("/:id", requireAuth(), async (req, res, next) => {
@@ -296,13 +307,15 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
     const a = await db("applications as ap")
       .join("jobs as j", "j.id", "ap.job_id")
       .join("organizations as o", "o.id", "j.org_id")
+      .leftJoin("simulation_feedbacks as sf", "sf.application_id", "ap.id")
       .where("ap.id", id)
       .select(
         "ap.*",
         "j.title as job_title",
         "j.slug as job_slug",
         "o.slug as org_slug",
-        "j.org_id as job_org_id"
+        "j.org_id as job_org_id",
+        "sf.final_score as final_score"
       )
       .first();
 
@@ -346,6 +359,7 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
       status: a.status,
       ai_summary: a.ai_summary,
       ai_scores: a.ai_scores,
+      final_score: a.final_score ?? null,
       created_at: a.created_at,
       files: {
         career_card: careerCard
@@ -405,8 +419,54 @@ r.patch("/:id/status", requireAuth(), async (req, res, next) => {
 });
 
 /* ------------------------------------------------------------------------- */
+/* GET /api/applications/metrics/overview  (org-wide AI metrics)             */
+/* ------------------------------------------------------------------------- */
+
+r.get("/metrics/overview", requireAuth(), async (req, res, next) => {
+  try {
+    const orgId = Number(req.auth.orgId);
+
+    // Overall averages (all time) for this org
+    const overall = await db("applications as a")
+      .join("jobs as j", "j.id", "a.job_id")
+      .leftJoin("simulation_feedbacks as sf", "sf.application_id", "a.id")
+      .where("j.org_id", orgId)
+      .whereNotNull("sf.final_score")
+      .select(db.raw("AVG(sf.final_score)::float as avg_score"), db.raw("COUNT(sf.final_score)::int as completed"))
+      .first();
+
+    // Top jobs over last 30 days by avg final_score
+    const top = await db("applications as a")
+      .join("jobs as j", "j.id", "a.job_id")
+      .leftJoin("simulation_feedbacks as sf", "sf.application_id", "a.id")
+      .where("j.org_id", orgId)
+      .whereNotNull("sf.final_score")
+      .andWhere(function () {
+        // prefer sf.created_at if exists; otherwise use application created_at
+        this.whereRaw(`COALESCE(sf.created_at, a.created_at) >= NOW() - INTERVAL '30 days'`);
+      })
+      .groupBy("j.id", "j.title")
+      .select(
+        "j.id as job_id",
+        "j.title as job_title",
+        db.raw("AVG(sf.final_score)::float as avg_score"),
+        db.raw("COUNT(sf.final_score)::int as completed")
+      )
+      .orderBy("avg_score", "desc")
+      .limit(5);
+
+    res.json({
+      avg_final_score: overall?.avg_score ?? null,      // float 0..100 or null
+      completed_count: overall?.completed ?? 0,         // integer
+      top_jobs_30d: top,                                // [{job_id, job_title, avg_score, completed}]
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/* ------------------------------------------------------------------------- */
 /* GET /api/applications/:id/file/:kind  (secure preview/download)           */
-/* kind = "resume" | "career_card"                                           */
 /* ------------------------------------------------------------------------- */
 r.get("/:id/file/:kind", requireAuth(), async (req, res, next) => {
   try {
@@ -439,35 +499,20 @@ r.get("/:id/file/:kind", requireAuth(), async (req, res, next) => {
     const spRaw = String(file.storage_path || "");
     const sp = spRaw.replace(/^\/+/, ""); // normalize (strip leading /)
 
-    // Build candidate absolute paths (corrected to reach project root & server/)
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const candidates = [];
 
-    // 1) Absolute path as-is
     if (path.isAbsolute(spRaw)) candidates.push(spRaw);
-
-    // 2) CWD (repo root in many setups)
     candidates.push(path.resolve(process.cwd(), sp));
-
-    // 3) CWD/server (common: server/uploads/...)
     candidates.push(path.resolve(process.cwd(), "server", sp));
-
-    // 4) Relative to this file: …/server/routes/ats/ -> hop two levels up to …/server/
     candidates.push(path.resolve(__dirname, "..", "..", sp));
-
-    // 5) If storage_path begins with "uploads/", try explicit …/server/uploads/<basename>
     if (sp.startsWith("uploads/")) {
       candidates.push(path.resolve(process.cwd(), "server", "uploads", path.basename(sp)));
       candidates.push(path.resolve(__dirname, "..", "..", "uploads", path.basename(sp)));
     }
 
     let abs = null;
-    for (const p of candidates) {
-      try {
-        if (fs.existsSync(p)) { abs = p; break; }
-      } catch {}
-    }
-
+    for (const p of candidates) { try { if (fs.existsSync(p)) { abs = p; break; } } catch {} }
     if (!abs) {
       console.warn("[fileserve] file_missing", { id, kind, spRaw, tried: candidates });
       return res.status(404).json({ error: "file_missing" });
@@ -481,11 +526,10 @@ r.get("/:id/file/:kind", requireAuth(), async (req, res, next) => {
     res.setHeader("Content-Type", file.mime || "application/octet-stream");
     res.setHeader("Content-Disposition", dispo);
 
-    const stream = fs.createReadStream(abs);
-    stream.on("error", next);
-    stream.pipe(res);
+    fs.createReadStream(abs).on("error", next).pipe(res);
   } catch (e) {
     next(e);
   }
 });
+
 export default r;
