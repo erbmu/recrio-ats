@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 const API = process.env.REACT_APP_API_URL || "http://localhost:4000";
+const SIMULATION_URL =
+  "https://docs.google.com/forms/d/1OQ0z4srhgMpD3QH2Xe8p8d3lMcLT7Bd77lFzJZxyVnM/edit?ts=68d9f60c&pli=1";
 
 const ALLOWED = new Set([
   "application/pdf",
@@ -251,6 +253,10 @@ export default function ApplyPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const startSimulation = () => {
+    window.open(SIMULATION_URL, "_blank", "noopener");
   };
 
   // Error & loading states
@@ -602,6 +608,19 @@ export default function ApplyPage() {
           {banner && (
             <div className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">{banner}</div>
           )}
+
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={startSimulation}
+              className="inline-flex h-10 items-center rounded-xl border border-zinc-300 px-4 text-sm hover:bg-zinc-50"
+            >
+              Optional simulation
+            </button>
+            <p className="mt-2 text-xs text-zinc-500">
+              This opens in a new tab. When you’re done, return here and click “Submit application.”
+            </p>
+          </div>
 
           <div className="mt-5">
             <button

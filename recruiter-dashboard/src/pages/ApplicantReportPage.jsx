@@ -1,6 +1,9 @@
+// src/pages/ApplicantReportPage.jsx
 import React from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api } from "../api/client";
+import { api, API_ORIGIN, tokenStore } from "../api/client";
+
+const API = process.env.REACT_APP_API_URL || "http://localhost:4000";
 
 const Card = ({ title, value }) => (
   <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
@@ -44,7 +47,55 @@ export default function ApplicantReportPage() {
   }, [applicantId]);
 
   const scores = app?.ai_scores || {};
-  const summary = app?.ai_summary || "AI report will appear here after parsing (mock).";
+  const simSummary = app?.ai_summary || null;
+
+  // Authenticated open of file (preview in new tab)
+  const openFile = async (kind, filenameHint = "file") => {
+    if (!app) return;
+    const token = tokenStore.get();
+    if (!token) {
+      alert("You must be signed in to view files.");
+      return;
+    }
+    const url = `${API_ORIGIN || API}/api/applications/${app.id}/file/${kind}`;
+
+    try {
+      const r = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!r.ok) {
+        const msg = `Failed to open file (${r.status})`;
+        try {
+          const j = await r.json();
+          alert(j?.error ? `${msg}: ${j.error}` : msg);
+        } catch {
+          alert(msg);
+        }
+        return;
+      }
+      const blob = await r.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      // open in new tab
+      const win = window.open(blobUrl, "_blank", "noopener");
+      // best-effort revoke after tab opens
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+      if (!win) {
+        // popup blocked — fallback download
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = filenameHint;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+      }
+    } catch (e) {
+      alert(e?.message || "Failed to open file");
+    }
+  };
 
   return (
     <div>
@@ -58,7 +109,6 @@ export default function ApplicantReportPage() {
         <h1 className="text-2xl font-semibold text-gray-900">
           Applicant Report: {app?.candidate_name || applicantId}
         </h1>
-        {/* subtle subtitle with job title if available (no job id shown) */}
         {app?.job_title && (
           <p className="text-sm text-gray-500">For {app.job_title}</p>
         )}
@@ -83,35 +133,72 @@ export default function ApplicantReportPage() {
             <Card title="Communication" value={pctOrNA(scores.communication)} />
           </div>
 
-          {/* Career Card Summary */}
+          {/* Candidate Details */}
           <div className="bg-white border border-gray-200 rounded-lg p-6 mb-10 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Career Card Feedback</h2>
-            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-              {summary}
-            </p>
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-600">
+            <h2 className="text-lg font-semibold text-gray-800 mb-4">Candidate Details</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
               <div><span className="text-gray-500">Name:</span> {app.candidate_name || "—"}</div>
               <div><span className="text-gray-500">Email:</span> {app.candidate_email || "—"}</div>
-              {app.current_title && (
-                <div><span className="text-gray-500">Current title:</span> {app.current_title}</div>
-              )}
+              {app.phone && (<div><span className="text-gray-500">Phone:</span> {app.phone}</div>)}
               {(app.city || app.country) && (
                 <div>
                   <span className="text-gray-500">Location:</span>{" "}
                   {[app.city, app.country].filter(Boolean).join(", ")}
                 </div>
               )}
+              {app.linkedin_url && (
+                <div className="truncate">
+                  <span className="text-gray-500">LinkedIn:</span>{" "}
+                  <a href={app.linkedin_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                    {app.linkedin_url}
+                  </a>
+                </div>
+              )}
+              {app.portfolio_url && (
+                <div className="truncate">
+                  <span className="text-gray-500">Portfolio:</span>{" "}
+                  <a href={app.portfolio_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                    {app.portfolio_url}
+                  </a>
+                </div>
+              )}
+              {app.current_title && (
+                <div><span className="text-gray-500">Current title:</span> {app.current_title}</div>
+              )}
+              {app.years_experience != null && (
+                <div><span className="text-gray-500">Years of experience:</span> {app.years_experience}</div>
+              )}
+              {app.salary_expectation && (
+                <div><span className="text-gray-500">Expected salary:</span> {app.salary_expectation}</div>
+              )}
+              {app.work_auth && (
+                <div><span className="text-gray-500">Work authorization:</span> {app.work_auth}</div>
+              )}
+              {app.work_pref && (
+                <div><span className="text-gray-500">Work preference:</span> {app.work_pref}</div>
+              )}
+              {app.relocate != null && (
+                <div><span className="text-gray-500">Open to relocation:</span> {app.relocate ? "Yes" : "No"}</div>
+              )}
+              {app.dob && (
+                <div><span className="text-gray-500">DOB:</span> {new Date(app.dob).toLocaleDateString()}</div>
+              )}
             </div>
           </div>
 
-          {/* Simulation Summary placeholder */}
+          {/* Simulation Summary */}
           <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
             <h2 className="text-lg font-semibold text-gray-800 mb-4">Simulation Report</h2>
-            <p className="text-gray-700 text-sm leading-relaxed">
-              The applicant’s simulation breakdown and transcripts will appear here when your
-              simulation pipeline posts results. Until then, the category-wise scores above and the
-              career-card feedback serve as the summary.
-            </p>
+            {simSummary ? (
+              <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+                {simSummary}
+              </p>
+            ) : (
+              <p className="text-gray-700 text-sm leading-relaxed">
+                The applicant’s simulation breakdown and transcripts will appear here when your
+                simulation results are available. For now, the category-wise scores above serve as the summary.
+              </p>
+            )}
 
             {(app.files?.career_card || app.files?.resume) && (
               <div className="mt-6">
@@ -119,12 +206,28 @@ export default function ApplicantReportPage() {
                 <ul className="text-sm text-gray-700 space-y-1">
                   {app.files?.career_card && (
                     <li>
-                      Career Card — {app.files.career_card.name} ({app.files.career_card.mime})
+                      Career Card —{" "}
+                      <a
+                        href="#"
+                        onClick={(e) => { e.preventDefault(); openFile("career_card", app.files.career_card.name || "career_card.pdf"); }}
+                        className="text-blue-600 hover:underline"
+                        title="Open career card"
+                      >
+                        {app.files.career_card.name} ({app.files.career_card.mime})
+                      </a>
                     </li>
                   )}
                   {app.files?.resume && (
                     <li>
-                      Resume — {app.files.resume.name} ({app.files.resume.mime})
+                      Resume —{" "}
+                      <a
+                        href="#"
+                        onClick={(e) => { e.preventDefault(); openFile("resume", app.files.resume.name || "resume.pdf"); }}
+                        className="text-blue-600 hover:underline"
+                        title="Open resume"
+                      >
+                        {app.files.resume.name} ({app.files.resume.mime})
+                      </a>
                     </li>
                   )}
                 </ul>

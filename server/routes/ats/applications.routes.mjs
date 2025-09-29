@@ -4,6 +4,9 @@ import { z } from "zod";
 import { db } from "../../db.mjs";
 import { upload } from "../../middleware/upload.mjs";
 import { requireAuth } from "../../middleware/requireAuth.mjs";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const r = Router();
 
@@ -401,4 +404,88 @@ r.patch("/:id/status", requireAuth(), async (req, res, next) => {
   }
 });
 
+/* ------------------------------------------------------------------------- */
+/* GET /api/applications/:id/file/:kind  (secure preview/download)           */
+/* kind = "resume" | "career_card"                                           */
+/* ------------------------------------------------------------------------- */
+r.get("/:id/file/:kind", requireAuth(), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const kind = String(req.params.kind || "").toLowerCase();
+
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: "bad_id" });
+    }
+    if (!["resume", "career_card"].includes(kind)) {
+      return res.status(400).json({ error: "bad_kind" });
+    }
+
+    // Auth: application must belong to caller's org
+    const app = await db("applications as ap")
+      .join("jobs as j", "j.id", "ap.job_id")
+      .select("ap.id", "j.org_id")
+      .where("ap.id", id)
+      .first();
+
+    if (!app || Number(app.org_id) !== Number(req.auth.orgId)) {
+      return res.status(404).json({ error: "not_found" });
+    }
+
+    const file = await db("application_files")
+      .where({ application_id: id, kind })
+      .first();
+    if (!file) return res.status(404).json({ error: "no_file" });
+
+    const spRaw = String(file.storage_path || "");
+    const sp = spRaw.replace(/^\/+/, ""); // normalize (strip leading /)
+
+    // Build candidate absolute paths (corrected to reach project root & server/)
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const candidates = [];
+
+    // 1) Absolute path as-is
+    if (path.isAbsolute(spRaw)) candidates.push(spRaw);
+
+    // 2) CWD (repo root in many setups)
+    candidates.push(path.resolve(process.cwd(), sp));
+
+    // 3) CWD/server (common: server/uploads/...)
+    candidates.push(path.resolve(process.cwd(), "server", sp));
+
+    // 4) Relative to this file: …/server/routes/ats/ -> hop two levels up to …/server/
+    candidates.push(path.resolve(__dirname, "..", "..", sp));
+
+    // 5) If storage_path begins with "uploads/", try explicit …/server/uploads/<basename>
+    if (sp.startsWith("uploads/")) {
+      candidates.push(path.resolve(process.cwd(), "server", "uploads", path.basename(sp)));
+      candidates.push(path.resolve(__dirname, "..", "..", "uploads", path.basename(sp)));
+    }
+
+    let abs = null;
+    for (const p of candidates) {
+      try {
+        if (fs.existsSync(p)) { abs = p; break; }
+      } catch {}
+    }
+
+    if (!abs) {
+      console.warn("[fileserve] file_missing", { id, kind, spRaw, tried: candidates });
+      return res.status(404).json({ error: "file_missing" });
+    }
+
+    const forceDownload = String(req.query.download || "") === "1";
+    const dispo = `${forceDownload ? "attachment" : "inline"}; filename="${encodeURIComponent(
+      file.original_name || path.basename(abs)
+    )}"`;
+
+    res.setHeader("Content-Type", file.mime || "application/octet-stream");
+    res.setHeader("Content-Disposition", dispo);
+
+    const stream = fs.createReadStream(abs);
+    stream.on("error", next);
+    stream.pipe(res);
+  } catch (e) {
+    next(e);
+  }
+});
 export default r;
