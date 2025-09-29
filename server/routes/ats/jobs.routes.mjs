@@ -5,9 +5,6 @@ import crypto from "crypto";
 import { db } from "../../db.mjs";
 import { requireAuth } from "../../middleware/requireAuth.mjs";
 
-const r = Router();
-const DBG = (...args) => console.log("[SRV][JOBS]", ...args);
-
 /* utils */
 function cleanStr(v, max = 4000) {
   if (typeof v !== "string") return v;
@@ -36,23 +33,15 @@ async function makeUniqueSlugGlobal(title) {
   }
   return `${root}-${Date.now()}`;
 }
-
-// 22-char base64url token (≈132 bits)
 function newToken() {
   return crypto.randomBytes(16).toString("base64url");
 }
-
 function buildApplyUrl(job, orgSlug) {
   const base = process.env.PUBLIC_BASE_URL || "";
   if (!base) return null;
   const origin = base.replace(/\/+$/, "");
-  if (job?.public_url_token) {
-    // preferred, hard-to-guess link
-    return `${origin}/apply/t/${job.public_url_token}`;
-  }
-  if (orgSlug && job?.slug) {
-    return `${origin}/apply/${orgSlug}/${job.slug}`;
-  }
+  if (job?.public_url_token) return `${origin}/apply/t/${job.public_url_token}`;
+  if (orgSlug && job?.slug) return `${origin}/apply/${orgSlug}/${job.slug}`;
   return null;
 }
 
@@ -67,33 +56,48 @@ const CreateSchema = z.object({
   salary: z.preprocess((v) => cleanStr(v, 160), z.string().optional().default("")),
 });
 
-/* --- PROBE: confirm this router is mounted --- */
-r.get("/_debug", (req, res) => {
-  DBG("HIT /_debug");
-  return res.json({ ok: true, router: "ats/jobs", note: "router is mounted" });
-});
+const r = Router();
 
-/* List jobs (recruiter) */
+/* ------------------------------------------------------------------------- */
+/* List jobs (recruiter) — includes live applicant count                      */
+/* ------------------------------------------------------------------------- */
 r.get("/", requireAuth(), async (req, res, next) => {
   try {
-    DBG("list: auth", req?.auth);
     const orgId = req.auth.orgId;
-    if (!orgId) {
-      DBG("list: missing orgId → 401");
-      return res.status(401).json({ error: "unauthorized" });
-    }
+
+    // Count applications per job, tolerant to either job_id or jobId schema.
+    // Postgres: quote "jobId" for camel column; COALESCE picks whichever exists per row.
+    // subquery: count applications per job (Postgres)
+    const countsSub = db("applications as a")
+    .whereNotNull("a.job_id")
+    .select("a.job_id")
+    .count("* as c")
+    .groupBy("a.job_id")
+    .as("ac");
 
     const rows = await db("jobs as j")
       .join("organizations as o", "o.id", "j.org_id")
+      .leftJoin(countsSub, "j.id", "ac.job_id")
       .where("j.org_id", orgId)
       .orderBy("j.id", "desc")
       .select(
-        "j.id","j.org_id","j.title","j.slug","j.public_url_token","j.description",
-        "j.qualifications","j.work_type","j.employment_type","j.location","j.salary",
-        "j.applicants","j.created_at","o.slug as org_slug"
+        "j.id",
+        "j.org_id",
+        "j.title",
+        "j.slug",
+        "j.public_url_token",
+        "j.description",
+        "j.qualifications",
+        "j.work_type",
+        "j.employment_type",
+        "j.location",
+        "j.salary",
+        "j.applicants",
+        "j.created_at",
+        "j.is_published",
+        "o.slug as org_slug",
+        db.raw("COALESCE(ac.c, 0)::int as app_count")
       );
-
-    DBG(`list: rows=${rows.length} for orgId=${orgId}`);
 
     const jobs = rows.map((j) => ({
       id: j.id,
@@ -106,37 +110,38 @@ r.get("/", requireAuth(), async (req, res, next) => {
       employment_type: j.employment_type || "",
       location: j.location || "",
       salary: j.salary || "",
-      applicants: Number(j.applicants || 0),
+      // prefer live count; fall back to denormalized column
+      applicants: Number(j.app_count ?? j.applicants ?? 0),
       created_at: j.created_at,
+      is_published: j.is_published,
       apply_url: buildApplyUrl(j, j.org_slug),
     }));
 
     res.json({ jobs });
   } catch (e) {
-    DBG("list: error", e?.message || e);
     next(e);
   }
 });
 
-/* Tiny meta (title for header in Applicants page) */
+/* Tiny meta */
 r.get("/:id/meta", requireAuth(), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "bad_id" });
-    const row = await db("jobs").where({ id, org_id: req.auth.orgId }).select("id","title","slug").first();
+    const row = await db("jobs").where({ id, org_id: req.auth.orgId }).select("id", "title", "slug").first();
     if (!row) return res.status(404).json({ error: "not_found" });
     res.json({ id: row.id, title: row.title, slug: row.slug });
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
-/* Create job (generates token link) */
+/* Create job */
 r.post("/", requireAuth(), async (req, res, next) => {
   try {
-    DBG("create: body", req.body);
     const parsed = CreateSchema.safeParse(req.body);
     if (!parsed.success) {
       const msg = parsed.error.issues?.[0]?.message || "Invalid payload";
-      DBG("create: invalid", msg);
       return res.status(400).json({ error: msg });
     }
     const { title, description, qualifications, workType, employmentType, location, salary } = parsed.data;
@@ -167,11 +172,19 @@ r.post("/", requireAuth(), async (req, res, next) => {
             applicants: 0,
           })
           .returning([
-            "id","org_id","title","slug","public_url_token","description","qualifications",
-            "work_type","employment_type","location","salary","created_at"
+            "id",
+            "org_id",
+            "title",
+            "slug",
+            "public_url_token",
+            "description",
+            "qualifications",
+            "work_type",
+            "employment_type",
+            "location",
+            "salary",
+            "created_at",
           ]);
-
-        DBG("create: ok id", inserted.id);
 
         return res.json({
           job: {
@@ -181,7 +194,6 @@ r.post("/", requireAuth(), async (req, res, next) => {
         });
       } catch (e) {
         const isUnique = e?.code === "23505";
-        DBG("create: unique error?", isUnique, e?.message);
         if (!isUnique) throw e;
 
         if (/jobs_slug_key|jobs_org_id_slug_unique/i.test(e.message || "")) {
@@ -198,15 +210,15 @@ r.post("/", requireAuth(), async (req, res, next) => {
         }
       }
     }
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
-/* -------- Public lookups (both forms supported) -------- */
-
+/* Public by token */
 r.get("/public/by-token/:token", async (req, res, next) => {
   try {
     const tok = String(req.params.token || "").trim();
-    DBG("public/by-token", tok);
     if (!tok) return res.status(400).json({ error: "bad_token" });
 
     const row = await db("jobs as j")
@@ -214,36 +226,79 @@ r.get("/public/by-token/:token", async (req, res, next) => {
       .where("j.public_url_token", tok)
       .andWhere("j.is_published", true)
       .select(
-        "j.id","j.title","j.slug","j.description","j.qualifications",
-        "j.work_type","j.employment_type","j.location","j.salary",
+        "j.id",
+        "j.title",
+        "j.slug",
+        "j.description",
+        "j.qualifications",
+        "j.work_type",
+        "j.employment_type",
+        "j.location",
+        "j.salary",
         "o.slug as org_slug"
       )
       .first();
 
     if (!row) return res.status(404).json({ error: "not_found" });
     res.json({ job: row });
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
 });
 
+/* Public by org/job slug */
 r.get("/public/:orgSlug/:jobSlug", async (req, res, next) => {
   try {
     const { orgSlug, jobSlug } = req.params;
-    DBG("public/org/slug", orgSlug, jobSlug);
     const row = await db("jobs as j")
       .join("organizations as o", "o.id", "j.org_id")
       .where("o.slug", orgSlug)
       .andWhere("j.slug", jobSlug)
       .andWhere("j.is_published", true)
       .select(
-        "j.id","j.title","j.slug","j.description","j.qualifications",
-        "j.work_type","j.employment_type","j.location","j.salary",
+        "j.id",
+        "j.title",
+        "j.slug",
+        "j.description",
+        "j.qualifications",
+        "j.work_type",
+        "j.employment_type",
+        "j.location",
+        "j.salary",
         "o.slug as org_slug"
       )
       .first();
 
     if (!row) return res.status(404).json({ error: "not_found" });
     res.json({ job: row });
-  } catch (e) { next(e); }
+  } catch (e) {
+    next(e);
+  }
+});
+
+/* DELETE job (recruiter) */
+r.delete("/:id", requireAuth(), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: "bad_id" });
+    }
+
+    const deleted = await db.transaction(async (trx) => {
+      const job = await trx("jobs").where({ id }).first().forUpdate();
+      if (!job) return "not_found";
+      if (Number(job.org_id) !== Number(req.auth.orgId)) return "forbidden";
+      await trx("jobs").where({ id }).del();
+      return true;
+    });
+
+    if (deleted === "not_found") return res.status(404).json({ error: "not_found" });
+    if (deleted === "forbidden") return res.status(403).json({ error: "forbidden" });
+
+    return res.json({ deleted: true });
+  } catch (e) {
+    return next(e);
+  }
 });
 
 export default r;

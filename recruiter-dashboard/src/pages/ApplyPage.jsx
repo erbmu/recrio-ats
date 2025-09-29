@@ -1,7 +1,8 @@
-import { useEffect, useState, useRef, useMemo } from "react";
+// src/pages/ApplyPage.jsx
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
-const API = "http://localhost:4000/api";
+const API = process.env.REACT_APP_API_URL || "http://localhost:4000";
 
 const ALLOWED = new Set([
   "application/pdf",
@@ -20,7 +21,12 @@ export default function ApplyPage() {
   const [job, setJob] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [ok, setOk] = useState(false);
-  const [err, setErr] = useState("");
+
+  // banner error (top)
+  const [banner, setBanner] = useState("");
+
+  // field errors
+  const [errors, setErrors] = useState({});
 
   const honeypotRef = useRef(null);
   const consentRef = useRef(null);
@@ -45,12 +51,12 @@ export default function ApplyPage() {
     let alive = true;
     (async () => {
       try {
-        setErr("");
+        setBanner("");
         let url;
         if (token) {
-          url = `${API}/jobs/public/by-token/${encodeURIComponent(token)}`;
+          url = `${API}/api/jobs/public/by-token/${encodeURIComponent(token)}`;
         } else {
-          url = `${API}/jobs/public/${encodeURIComponent(companySlug)}/${encodeURIComponent(jobSlug)}`;
+          url = `${API}/api/jobs/public/${encodeURIComponent(companySlug)}/${encodeURIComponent(jobSlug)}`;
         }
         const r = await fetch(url);
         if (!r.ok) {
@@ -65,7 +71,7 @@ export default function ApplyPage() {
         const data = await r.json();
         if (alive) setJob(data.job); // <-- unwrap { job }
       } catch (e) {
-        if (alive) setErr(e?.message || "Unable to load job");
+        if (alive) setBanner(e?.message || "Unable to load job");
       }
     })();
     return () => {
@@ -74,15 +80,22 @@ export default function ApplyPage() {
   }, [token, companySlug, jobSlug]);
 
   // UI helpers
-  const inputClass =
-    "mt-1 block w-full rounded-xl border border-zinc-300 bg-white placeholder:text-zinc-400 " +
-    "h-11 px-3 text-[15px] leading-tight focus:outline-none focus:ring-4 focus:ring-zinc-900/5 focus:border-zinc-400";
-  const textareaClass =
-    "mt-1 block w-full rounded-xl border border-zinc-300 bg-white placeholder:text-zinc-400 " +
-    "px-3 py-2 text-[15px] leading-relaxed focus:outline-none focus:ring-4 focus:ring-zinc-900/5 focus:border-zinc-400";
-  const selectClass =
-    "mt-1 block w-full rounded-xl border border-zinc-300 bg-white h-11 px-3 text-[15px] " +
-    "focus:outline-none focus:ring-4 focus:ring-zinc-900/5 focus:border-zinc-400";
+  const baseInputClass =
+    "mt-1 block w-full rounded-xl border bg-white placeholder:text-zinc-400 " +
+    "h-11 px-3 text-[15px] leading-tight focus:outline-none focus:ring-4 focus:ring-zinc-900/5";
+  const baseTextareaClass =
+    "mt-1 block w-full rounded-xl border bg-white placeholder:text-zinc-400 " +
+    "px-3 py-2 text-[15px] leading-relaxed focus:outline-none focus:ring-4 focus:ring-zinc-900/5";
+  const baseSelectClass =
+    "mt-1 block w-full rounded-xl border bg-white h-11 px-3 text-[15px] " +
+    "focus:outline-none focus:ring-4 focus:ring-zinc-900/5";
+
+  const inputClass = (name) =>
+    `${baseInputClass} ${errors[name] ? "border-red-400 focus:ring-red-100" : "border-zinc-300 focus:border-zinc-400"}`;
+  const textareaClass = (name) =>
+    `${baseTextareaClass} ${errors[name] ? "border-red-400 focus:ring-red-100" : "border-zinc-300 focus:border-zinc-400"}`;
+  const selectClass = (name) =>
+    `${baseSelectClass} ${errors[name] ? "border-red-400 focus:ring-red-100" : "border-zinc-300 focus:border-zinc-400"}`;
 
   const pill = (text) => (
     <span className="inline-flex items-center rounded-full bg-zinc-100 text-zinc-700 px-3 py-1 text-xs font-medium">
@@ -111,11 +124,11 @@ export default function ApplyPage() {
     const msg = validateFile(f);
     if (msg) {
       setter("");
-      setErr(msg);
+      setBanner(msg);
       input.value = "";
       return;
     }
-    setErr("");
+    setBanner("");
     setter(`${f.name} • ${fmtBytes(f.size)}`);
   };
 
@@ -153,57 +166,100 @@ export default function ApplyPage() {
     );
   };
 
+  const clearFieldError = (name) =>
+    setErrors((e) => (e[name] ? { ...e, [name]: "" } : e));
+
   const onSubmit = async (e) => {
     e.preventDefault();
-    setErr("");
+    setBanner("");
+    setErrors({});
 
-    if (honeypotRef.current?.value) return setErr("Submission rejected.");
-    if (!job) return setErr("Job not loaded.");
-    if (!consentRef.current?.checked) {
-      return setErr("Please accept the privacy notice to continue.");
+    // Honeypot
+    if (honeypotRef.current?.value) {
+      setBanner("Submission rejected.");
+      return;
+    }
+    if (!job) {
+      setBanner("Job not loaded.");
+      return;
     }
 
     const fd = new FormData(e.currentTarget);
+
+    // Required client-side
+    const name = String(fd.get("candidate_name") || "").trim();
+    const email = String(fd.get("candidate_email") || "").trim();
+    const workAuth = String(fd.get("work_auth") || "").trim();
+    const consent = !!consentRef.current?.checked;
+
+    const fieldErrs = {};
+    if (!name) fieldErrs.candidate_name = "Full name is required.";
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fieldErrs.candidate_email = "A valid email is required.";
+    if (!workAuth) fieldErrs.work_auth = "Work authorization is required.";
+    if (!consent) fieldErrs.consent = "You must accept the privacy notice to continue.";
+
+    // Files
     const ccFile = fd.get("careerCard");
     const cvFile = fd.get("resume");
-
     const ccErr = ccFile && ccFile.name ? validateFile(ccFile) : "";
-    if (ccErr) return setErr(ccErr);
     const cvErr = cvFile && cvFile.name ? validateFile(cvFile) : "";
-    if (cvErr) return setErr(cvErr);
+    if (ccErr) fieldErrs.careerCard = ccErr;
+    if (cvErr) fieldErrs.resume = cvErr;
+
+    if (Object.keys(fieldErrs).length) {
+      setErrors(fieldErrs);
+      setBanner("Please fix the highlighted fields below.");
+      // focus the first error field
+      const firstKey = Object.keys(fieldErrs)[0];
+      const el = document.querySelector(`[name="${firstKey}"]`);
+      el?.focus?.();
+      return;
+    }
 
     try {
       setSubmitting(true);
-      const r = await fetch(`${API}/applications/public/${encodeURIComponent(job.id)}`, {
+      const r = await fetch(`${API}/api/applications/public/${encodeURIComponent(job.id)}`, {
         method: "POST",
         body: fd,
       });
       if (!r.ok) {
-        let message = `Submission failed (${r.status})`;
+        // Try to decode a per-field error response {error, field?}
+        let msg = `Submission failed (${r.status})`;
         try {
           const j = await r.json();
-          if (j?.error) message = j.error;
-        } catch {}
-        throw new Error(message);
+          if (j?.field && j?.error) {
+            setErrors({ [j.field]: j.error });
+            setBanner("Please fix the highlighted fields below.");
+          } else if (j?.error) {
+            msg = j.error;
+            setBanner(msg);
+          } else {
+            setBanner(msg);
+          }
+        } catch {
+          setBanner(msg);
+        }
+        return;
       }
       setOk(true);
       e.currentTarget.reset();
       setCcPreview("");
       setCvPreview("");
-    } catch (e) {
-      setErr(e?.message || "Submission failed");
+      setBanner("");
+    } catch (e2) {
+      setBanner(e2?.message || "Submission failed");
     } finally {
       setSubmitting(false);
     }
   };
 
   // Error & loading states
-  if (err && !job) {
+  if (banner && !job) {
     return (
       <div className="min-h-[60vh] grid place-items-center p-6">
         <div className="max-w-lg w-full bg-white border border-red-200 text-red-700 rounded-2xl p-6">
           <div className="font-semibold">Error</div>
-          <p className="mt-2 text-sm">{err}</p>
+          <p className="mt-2 text-sm">{banner}</p>
         </div>
       </div>
     );
@@ -317,6 +373,7 @@ export default function ApplyPage() {
         onSubmit={onSubmit}
         className="bg-white border border-zinc-200 rounded-2xl shadow-sm"
         noValidate
+        onChange={(e) => clearFieldError(e.target.name)}
       >
         <input ref={honeypotRef} name="website" tabIndex={-1} autoComplete="off" className="hidden" />
 
@@ -328,13 +385,15 @@ export default function ApplyPage() {
               <label className="block text-sm text-zinc-600">
                 Full name <span className="text-red-500">*</span>
               </label>
-              <input name="candidate_name" required autoComplete="name" className={inputClass} />
+              <input name="candidate_name" required autoComplete="name" className={inputClass("candidate_name")} />
+              {errors.candidate_name && <p className="text-xs text-red-600 mt-1">{errors.candidate_name}</p>}
             </div>
             <div>
               <label className="block text-sm text-zinc-600">
                 Email <span className="text-red-500">*</span>
               </label>
-              <input type="email" name="candidate_email" required autoComplete="email" className={inputClass} />
+              <input type="email" name="candidate_email" required autoComplete="email" className={inputClass("candidate_email")} />
+              {errors.candidate_email && <p className="text-xs text-red-600 mt-1">{errors.candidate_email}</p>}
             </div>
             <div>
               <label className="block text-sm text-zinc-600">Phone (optional)</label>
@@ -343,17 +402,18 @@ export default function ApplyPage() {
                 inputMode="tel"
                 placeholder="+1 555 123 4567"
                 pattern="^[0-9+()\\-\\s]{7,24}$"
-                className={inputClass}
+                className={inputClass("phone")}
               />
+              {errors.phone && <p className="text-xs text-red-600 mt-1">{errors.phone}</p>}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-zinc-600">City (optional)</label>
-                <input name="city" autoComplete="address-level2" className={inputClass} />
+                <input name="city" autoComplete="address-level2" className={inputClass("city")} />
               </div>
               <div>
                 <label className="block text-sm text-zinc-600">Country (optional)</label>
-                <input name="country" autoComplete="country-name" className={inputClass} />
+                <input name="country" autoComplete="country-name" className={inputClass("country")} />
               </div>
             </div>
           </div>
@@ -367,36 +427,39 @@ export default function ApplyPage() {
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-zinc-600">LinkedIn (optional)</label>
-              <input name="linkedin_url" inputMode="url" placeholder="https://linkedin.com/in/…" className={inputClass} />
+              <input name="linkedin_url" inputMode="url" placeholder="https://linkedin.com/in/…" className={inputClass("linkedin_url")} />
             </div>
             <div>
               <label className="block text-sm text-zinc-600">Portfolio (optional)</label>
-              <input name="portfolio_url" inputMode="url" placeholder="https://…" className={inputClass} />
+              <input name="portfolio_url" inputMode="url" placeholder="https://…" className={inputClass("portfolio_url")} />
             </div>
             <div>
               <label className="block text-sm text-zinc-600">Years of experience (optional)</label>
-              <input name="years_experience" type="number" min="0" max="60" step="0.5" placeholder="e.g., 3" className={inputClass} />
+              <input name="years_experience" type="number" min="0" max="60" step="0.5" placeholder="e.g., 3" className={inputClass("years_experience")} />
             </div>
             <div>
               <label className="block text-sm text-zinc-600">Current title (optional)</label>
-              <input name="current_title" placeholder="e.g., Frontend Engineer" className={inputClass} />
+              <input name="current_title" placeholder="e.g., Frontend Engineer" className={inputClass("current_title")} />
             </div>
             <div>
               <label className="block text-sm text-zinc-600">Expected salary (optional)</label>
-              <input name="salary_expectation" type="text" placeholder="$X or range" className={inputClass} />
+              <input name="salary_expectation" type="text" placeholder="$X or range" className={inputClass("salary_expectation")} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-zinc-600">Work authorization (optional)</label>
-                <select name="work_auth" defaultValue="" className={selectClass}>
+                <label className="block text-sm text-zinc-600">
+                  Work authorization <span className="text-red-500">*</span>
+                </label>
+                <select name="work_auth" defaultValue="" className={selectClass("work_auth")}>
                   <option value="">Select…</option>
                   <option>Authorized (no sponsorship)</option>
                   <option>Requires sponsorship</option>
                 </select>
+                {errors.work_auth && <p className="text-xs text-red-600 mt-1">{errors.work_auth}</p>}
               </div>
               <div>
                 <label className="block text-sm text-zinc-600">Work preference (optional)</label>
-                <select name="work_pref" defaultValue="" className={selectClass}>
+                <select name="work_pref" defaultValue="" className={selectClass("work_pref")}>
                   <option value="">Select…</option>
                   <option>Remote</option>
                   <option>Hybrid</option>
@@ -415,7 +478,7 @@ export default function ApplyPage() {
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-zinc-600">Date of birth (optional)</label>
-              <input type="date" name="dob" max={maxDob} className={inputClass} />
+              <input type="date" name="dob" max={maxDob} className={inputClass("dob")} />
               <p className="text-xs text-zinc-500 mt-2">
                 Used only for identity verification/background checks after an offer, where legally permitted.
               </p>
@@ -438,8 +501,8 @@ export default function ApplyPage() {
             {/* Career Card */}
             <div
               className="rounded-2xl border border-dashed border-zinc-300 p-5 hover:border-zinc-400 transition"
-              onDragOver={(e) => e.preventDefault()}
-              onDragEnter={(e) => e.preventDefault()}
+              onDragOver={preventDefault}
+              onDragEnter={preventDefault}
               onDrop={(e) => handleDrop(e, ccInputRef, setCcPreview)}
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -475,13 +538,14 @@ export default function ApplyPage() {
                   </button>
                 </div>
               </div>
+              {errors.careerCard && <p className="text-xs text-red-600 mt-1">{errors.careerCard}</p>}
             </div>
 
             {/* Resume */}
             <div
               className="rounded-2xl border border-dashed border-zinc-300 p-5 hover:border-zinc-400 transition"
-              onDragOver={(e) => e.preventDefault()}
-              onDragEnter={(e) => e.preventDefault()}
+              onDragOver={preventDefault}
+              onDragEnter={preventDefault}
               onDrop={(e) => handleDrop(e, cvInputRef, setCvPreview)}
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -517,28 +581,7 @@ export default function ApplyPage() {
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
-        </section>
-
-        <div className="h-px bg-zinc-100" />
-
-        {/* Section: Optional Simulation */}
-        <section className="p-6 md:p-8">
-          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-5">
-            <p className="text-sm text-zinc-700">
-              <span className="font-medium">Optional simulation interview:</span> Experience a short, AI-guided
-              simulation reflecting real scenarios from this role. This is voluntary and won’t negatively
-              impact your application.
-            </p>
-            <div className="mt-3">
-              <button
-                type="button"
-                className="inline-flex h-10 items-center rounded-xl border border-zinc-300 px-4 text-sm hover:bg-zinc-100"
-                onClick={() => alert("Simulation placeholder — will be integrated later.")}
-              >
-                Try the optional simulation
-              </button>
+              {errors.resume && <p className="text-xs text-red-600 mt-1">{errors.resume}</p>}
             </div>
           </div>
         </section>
@@ -554,9 +597,10 @@ export default function ApplyPage() {
               <a href="/privacy" className="underline">Privacy Notice</a>.
             </label>
           </div>
+          {errors.consent && <p className="text-xs text-red-600 mt-2">{errors.consent}</p>}
 
-          {err && (
-            <div className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">{err}</div>
+          {banner && (
+            <div className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">{banner}</div>
           )}
 
           <div className="mt-5">

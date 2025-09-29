@@ -13,12 +13,10 @@ const r = Router();
 let publicLimiter = (_req, _res, next) => next(); // no-op fallback
 let _warnedLimiter = false;
 try {
-  // static import namespace to support both named & default exports
   const mod = await import("../../middleware/rateLimit.mjs");
   const maybe =
     (mod && mod.publicLimiter) ||
     (mod && mod.default && mod.default.publicLimiter);
-
   if (typeof maybe === "function") {
     publicLimiter = maybe;
   } else if (!_warnedLimiter) {
@@ -48,6 +46,7 @@ function cleanStr(v, max = 160) {
   if (s.length > max) s = s.slice(0, max);
   return s;
 }
+const emptyToUndef = (v) => (v === "" ? undefined : v);
 
 const WorkAuthEnum = ["Authorized (no sponsorship)", "Requires sponsorship"];
 const WorkPrefEnum = ["Remote", "Hybrid", "Onsite"];
@@ -79,8 +78,19 @@ const ApplicationSchema = z.object({
     z.union([z.string(), z.literal(""), z.undefined()])).transform((v) => (v ? v : null)),
   salary_expectation: z.preprocess((v) => (typeof v === "string" ? cleanStr(v, 60) : v),
     z.union([z.string(), z.literal(""), z.undefined()])).transform((v) => (v ? v : null)),
-  work_auth: z.union([z.enum(WorkAuthEnum), z.undefined()]).transform((v) => v ?? null),
-  work_pref: z.union([z.enum(WorkPrefEnum), z.undefined()]).transform((v) => v ?? null),
+
+  // ✅ REQUIRED on server; also coerce "" → undefined so we get the custom required error
+  work_auth: z.preprocess(
+    emptyToUndef,
+    z.enum(WorkAuthEnum, { required_error: "Work authorization is required." })
+  ),
+
+  // ✅ OPTIONAL; coerce "" → undefined, then store as NULL
+  work_pref: z.preprocess(
+    emptyToUndef,
+    z.union([z.enum(WorkPrefEnum), z.undefined()])
+  ).transform((v) => v ?? null),
+
   dob: z.preprocess((v) => (typeof v === "string" ? v.trim() : v),
     z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid DOB format"), z.literal(""), z.undefined()]))
     .transform((v) => (v ? v : null))
@@ -90,13 +100,14 @@ const ApplicationSchema = z.object({
       const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 16);
       return d <= cutoff;
     })(), { message: "Must be at least 16" }),
+
   relocate: z.union([z.literal("on"), z.literal("true"), z.literal("1"), z.undefined()]).transform((v) => !!v),
+
   website: z.string().optional().transform((v) => (v ?? "").trim()), // honeypot
 });
 
 /* ------------------------------------------------------------------------- */
-/* POST /api/applications/public/:jobId                                      */
-/* (career card & resume optional)                                           */
+/* POST /api/applications/public/:jobId  (career card & resume optional)      */
 /* ------------------------------------------------------------------------- */
 
 r.post(
@@ -118,12 +129,14 @@ r.post(
 
       const parsed = ApplicationSchema.safeParse(req.body);
       if (!parsed.success) {
-        const msg = parsed.error.issues?.[0]?.message || "Invalid form submission";
-        return res.status(400).json({ error: msg });
+        const issue = parsed.error.issues?.[0];
+        const field = issue?.path?.[0] || "form";
+        const message = issue?.message || "Invalid form submission";
+        return res.status(400).json({ field, error: message });
       }
       const data = parsed.data;
 
-      if (data.website) return res.status(400).json({ error: "Rejected" });
+      if (data.website) return res.status(400).json({ field: "website", error: "Rejected" });
 
       const cc = req.files?.careerCard?.[0] || null;
       const cv = req.files?.resume?.[0] || null;
@@ -146,8 +159,8 @@ r.post(
             years_experience: data.years_experience ?? null,
             current_title: data.current_title,
             salary_expectation: data.salary_expectation,
-            work_auth: data.work_auth,
-            work_pref: data.work_pref,
+            work_auth: data.work_auth,           // required
+            work_pref: data.work_pref,           // may be NULL
             dob: data.dob,
             relocate: data.relocate ?? false,
             status: "applied",
@@ -197,7 +210,7 @@ r.post(
       return res.json({ ok: true, application_id: applicationId });
     } catch (e) {
       if (e && e.code === "23505") {
-        return res.status(409).json({ error: "duplicate_application" });
+        return res.status(409).json({ field: "candidate_email", error: "duplicate_application" });
       }
       return next(e);
     }
@@ -205,7 +218,7 @@ r.post(
 );
 
 /* ------------------------------------------------------------------------- */
-/* GET /api/applications/job/:jobId  (recruiter list, ranked when scores)     */
+/* GET /api/applications/job/:jobId (recruiter list, ranked when scores)     */
 /* ------------------------------------------------------------------------- */
 
 r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
