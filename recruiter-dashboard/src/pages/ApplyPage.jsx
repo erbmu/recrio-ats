@@ -3,8 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 const API = process.env.REACT_APP_API_URL || "http://localhost:4000";
-const SIMULATION_URL =
-  "https://docs.google.com/forms/d/1OQ0z4srhgMpD3QH2Xe8p8d3lMcLT7Bd77lFzJZxyVnM/edit?ts=68d9f60c&pli=1";
 
 const ALLOWED = new Set([
   "application/pdf",
@@ -21,6 +19,7 @@ export default function ApplyPage() {
   const { token, companySlug, jobSlug } = useParams();
 
   const [job, setJob] = useState(null);
+  const [companyOrg, setCompanyOrg] = useState(null); // NEW: company org (with company_description)
   const [submitting, setSubmitting] = useState(false);
   const [ok, setOk] = useState(false);
 
@@ -48,38 +47,65 @@ export default function ApplyPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   }, []);
 
-  // Load job
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        setBanner("");
-        let url;
-        if (token) {
-          url = `${API}/api/jobs/public/by-token/${encodeURIComponent(token)}`;
-        } else {
-          url = `${API}/api/jobs/public/${encodeURIComponent(companySlug)}/${encodeURIComponent(jobSlug)}`;
-        }
-        const r = await fetch(url);
-        if (!r.ok) {
-          let message = `Job not found (${r.status})`;
-          try {
-            const j = await r.json();
-            if (j?.error === "not_found_org") message = "Company not found or inactive";
-            if (j?.error === "not_found") message = "Job not found";
-          } catch {}
-          throw new Error(message);
-        }
-        const data = await r.json();
-        if (alive) setJob(data.job); // <-- unwrap { job }
-      } catch (e) {
-        if (alive) setBanner(e?.message || "Unable to load job");
+// Load job
+useEffect(() => {
+  let alive = true;
+
+  (async () => {
+    try {
+      setBanner("");
+
+      const url = token
+        ? `${API}/api/jobs/public/by-token/${encodeURIComponent(token)}`
+        : `${API}/api/jobs/public/${encodeURIComponent(companySlug)}/${encodeURIComponent(jobSlug)}`;
+
+      const r = await fetch(url);
+      if (!r.ok) {
+        let message = `Job not found (${r.status})`;
+        try {
+          const j = await r.json();
+          if (j?.error === "not_found_org") message = "Company not found or inactive";
+          if (j?.error === "not_found") message = "Job not found";
+        } catch {}
+        throw new Error(message);
       }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [token, companySlug, jobSlug]);
+
+      const data = await r.json();
+      if (!alive) return;
+      setJob(data.job);
+
+      // Fetch org by org_id; fall back to companySlug
+      try {
+        if (data?.job?.org_id) {
+          const rr = await fetch(`${API}/api/orgs/public/${encodeURIComponent(data.job.org_id)}`);
+          if (rr.ok) {
+            const jj = await rr.json();
+            setCompanyOrg(jj?.org || null);
+            return;
+          }
+        }
+        if (companySlug) {
+          const rr2 = await fetch(`${API}/api/orgs/public/by-slug/${encodeURIComponent(companySlug)}`);
+          if (rr2.ok) {
+            const jj2 = await rr2.json();
+            setCompanyOrg(jj2?.org || null);
+            return;
+          }
+        }
+        setCompanyOrg(null);
+      } catch {
+        setCompanyOrg(null);
+      }
+    } catch (e) {
+      if (alive) setBanner(e?.message || "Unable to load job");
+    }
+  })();
+
+  return () => {
+    alive = false;
+  };
+}, [token, companySlug, jobSlug]);
+
 
   // UI helpers
   const baseInputClass =
@@ -225,7 +251,6 @@ export default function ApplyPage() {
         body: fd,
       });
       if (!r.ok) {
-        // Try to decode a per-field error response {error, field?}
         let msg = `Submission failed (${r.status})`;
         try {
           const j = await r.json();
@@ -253,10 +278,6 @@ export default function ApplyPage() {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const startSimulation = () => {
-    window.open(SIMULATION_URL, "_blank", "noopener");
   };
 
   // Error & loading states
@@ -342,10 +363,17 @@ export default function ApplyPage() {
             </section>
 
             <aside className="lg:col-span-1 bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-zinc-900">Position details</h3>
+              <h3 className="text-sm font-semibold text-zinc-900">Company</h3>
               <dl className="mt-3 space-y-3 text-[15px] text-zinc-700">
+                <div>
+                  <dt className="sr-only">About</dt>
+                  <dd className="whitespace-pre-wrap">
+                    {companyOrg?.company_description || "—"}
+                  </dd>
+                </div>
+
                 {job.location && (
-                  <div className="flex justify-between gap-6">
+                  <div className="flex justify-between gap-6 mt-4">
                     <dt className="text-zinc-500">Location</dt>
                     <dd className="text-right">{job.location}</dd>
                   </div>
@@ -371,6 +399,7 @@ export default function ApplyPage() {
               </dl>
             </aside>
           </div>
+
         )}
       </header>
 
@@ -609,18 +638,7 @@ export default function ApplyPage() {
             <div className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">{banner}</div>
           )}
 
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={startSimulation}
-              className="inline-flex h-10 items-center rounded-xl border border-zinc-300 px-4 text-sm hover:bg-zinc-50"
-            >
-              Optional simulation
-            </button>
-            <p className="mt-2 text-xs text-zinc-500">
-              This opens in a new tab. When you’re done, return here and click “Submit application.”
-            </p>
-          </div>
+          {/* REMOVED: Optional simulation button per your request */}
 
           <div className="mt-5">
             <button

@@ -7,23 +7,19 @@ import morgan from "morgan";
 
 import authRoutes from "./routes/auth.mjs";
 import adminRoutes from "./routes/admin.mjs";
-import simPublicRoutes from "./routes/sim.public.routes.mjs";
+import orgRoutes from "./routes/org.routes.mjs";
 
 // ATS APIs
 import atsJobsRoutes from "./routes/ats/jobs.routes.mjs";
 import atsApplicationsRoutes from "./routes/ats/applications.routes.mjs";
-import orgRoutes from "./routes/org.routes.mjs";
-import orgPublicRoutes from "./routes/org.public.routes.mjs";
 
 dotenv.config();
 
 const app = express();
-app.use(cors({ origin: true, credentials: false }));
 const isProd = process.env.NODE_ENV === "production";
 
 app.disable("x-powered-by");
-app.use("/api/orgs/public", orgPublicRoutes);  
-
+app.use(cors({ origin: true, credentials: false }));
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false, limit: "50kb" }));
 app.use(
@@ -37,11 +33,6 @@ app.use(
 );
 app.use(morgan(isProd ? "combined" : "tiny"));
 
-app.use(orgRoutes);
-
-app.use(simPublicRoutes);
-
-
 // VERY VERBOSE per-request logger
 app.use((req, res, next) => {
   const start = Date.now();
@@ -52,6 +43,9 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+app.use(orgRoutes); // routes already start with /api/...
+
 
 // BigInt-safe JSON
 app.use((req, res, next) => {

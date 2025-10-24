@@ -226,6 +226,7 @@ r.get("/public/by-token/:token", async (req, res, next) => {
       .where("j.public_url_token", tok)
       .andWhere("j.is_published", true)
       .select(
+        "j.org_id",
         "j.id",
         "j.title",
         "j.slug",
@@ -256,6 +257,7 @@ r.get("/public/:orgSlug/:jobSlug", async (req, res, next) => {
       .andWhere("j.slug", jobSlug)
       .andWhere("j.is_published", true)
       .select(
+        "j.org_id",
         "j.id",
         "j.title",
         "j.slug",

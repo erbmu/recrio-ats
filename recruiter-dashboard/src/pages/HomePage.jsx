@@ -198,10 +198,16 @@ export default function HomePage() {
   const [loadingChart, setLoadingChart] = useState(true);
 
   // NEW metrics
-  const [avgAi, setAvgAi] = useState(null);         // number or null
+  const [avgAi, setAvgAi] = useState(null);
   const [simCompleted, setSimCompleted] = useState(0);
   const [topJobs, setTopJobs] = useState([]);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
+
+  // NEW: Org profile / company description
+  const [orgProfile, setOrgProfile] = useState(null);
+  const [companyDesc, setCompanyDesc] = useState("");
+  const [savingDesc, setSavingDesc] = useState(false);
+  const [loadingOrg, setLoadingOrg] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -213,6 +219,7 @@ export default function HomePage() {
       })
       .catch(() => {});
 
+    // jobs overview
     api("/api/jobs")
       .then((res) => {
         if (cancelled) return;
@@ -232,7 +239,7 @@ export default function HomePage() {
         }
       });
 
-    // Fetch AI metrics (avg score, completed count, top jobs)
+    // metrics
     api("/api/applications/metrics/overview")
       .then((res) => {
         if (cancelled) return;
@@ -254,12 +261,27 @@ export default function HomePage() {
         }
       });
 
+    // NEW: org profile (for company description)
+    api("/api/org/profile")
+      .then((res) => {
+        if (cancelled) return;
+        setOrgProfile(res?.org || null);
+        setCompanyDesc(res?.org?.company_description || "");
+        setLoadingOrg(false);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOrgProfile(null);
+          setCompanyDesc("");
+          setLoadingOrg(false);
+        }
+      });
+
     return () => { cancelled = true; };
   }, []);
 
   const series = useApplicationsTimeSeries(jobs);
   const first = me?.name ? me.name.split(" ")[0] : "Recruiter";
-
   const fmtAvg = (v) => (v == null ? "—" : `${Math.round(v)}%`);
 
   return (
@@ -328,6 +350,55 @@ export default function HomePage() {
             <TopJobsBars items={topJobs} />
           )}
         </div>
+      </div>
+
+      {/* --------------------------- Company Profile --------------------------- */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-lg font-semibold text-gray-800">
+            Company Profile
+            {orgProfile?.name ? (
+              <span className="text-gray-400 font-normal"> — {orgProfile.name}</span>
+            ) : null}
+          </p>
+          <button
+            onClick={async () => {
+              try {
+                setSavingDesc(true);
+                await api("/api/org/profile", {
+                  method: "POST",
+                  body: { company_description: companyDesc },
+                });
+              } finally {
+                setSavingDesc(false);
+              }
+            }}
+            className="inline-flex items-center px-3 py-1.5 rounded-md bg-gray-900 text-white text-sm hover:bg-black disabled:opacity-60"
+            disabled={savingDesc || loadingOrg}
+          >
+            {savingDesc ? "Saving…" : "Save"}
+          </button>
+        </div>
+
+        {loadingOrg ? (
+          <div className="text-gray-400 italic">Loading…</div>
+        ) : (
+          <>
+            <label className="block text-sm text-gray-600 mb-2">
+              Company Description (shared across all jobs)
+            </label>
+            <textarea
+              value={companyDesc}
+              onChange={(e) => setCompanyDesc(e.target.value)}
+              rows={6}
+              className="w-full border border-gray-300 rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+              placeholder="Describe your mission, product, culture, benefits, and any useful links…"
+            />
+            <p className="text-xs text-gray-500 mt-2">
+              This description appears on all your Apply pages and will be passed to the Simulation.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );
