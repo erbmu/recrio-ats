@@ -75,6 +75,26 @@ const emptyToUndef = (v) => (v === "" ? undefined : v);
 const WorkAuthEnum = ["Authorized (no sponsorship)", "Requires sponsorship"];
 const WorkPrefEnum = ["Remote", "Hybrid", "Onsite"];
 
+const extractPublicToken = (urlValue) => {
+  if (typeof urlValue !== "string") return null;
+  let raw = urlValue.trim();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    raw = parsed.pathname || "";
+  } catch {
+    // treat as relative URL
+  }
+  const qIdx = raw.indexOf("?");
+  if (qIdx >= 0) raw = raw.slice(0, qIdx);
+  raw = raw.replace(/[#?].*$/, "").replace(/\/+$/, "");
+  if (!raw) return null;
+  const parts = raw.split("/").filter(Boolean);
+  if (!parts.length) return null;
+  const token = parts[parts.length - 1];
+  return token || null;
+};
+
 const httpUrlSchema = z
   .preprocess((v) => (typeof v === "string" ? cleanStr(v, 255) : v),
     z.union([z.string().max(255), z.literal(""), z.undefined()]))
@@ -316,13 +336,18 @@ r.post(
         });
 
         if (resp?.ok && resp?.url) {
-          await db("simulations")
-            .where({ application_id: applicationId })
-            .update({
-              status: "ready",
-              url: resp.url,
-              updated_at: db.fn.now(),
-            });
+          const token = extractPublicToken(resp.url);
+          const update = {
+            status: "ready",
+            url: resp.url,
+            updated_at: db.fn.now(),
+          };
+          if (token) {
+            update.public_token = token;
+          } else {
+            console.warn("[sim trigger] unable to parse public token from URL:", resp.url);
+          }
+          await db("simulations").where({ application_id: applicationId }).update(update);
         } else {
           // Leave as 'pending' - you can inspect logs if something odd came back
           await db("simulations")

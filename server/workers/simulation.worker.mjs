@@ -38,7 +38,8 @@ export async function makeSimulationForApplication(applicationId) {
   //    keep it minimal (only what you need to decrypt/lookup):
   const payload = String(row.application_id);
   const sig = sign(payload);
-  const url = `${SIM_PUBLIC_BASE.replace(/\/+$/, "")}/s/${payload}.${sig}`;
+  const token = `${payload}.${sig}`;
+  const url = `${SIM_PUBLIC_BASE.replace(/\/+$/, "")}/s/${token}`;
 
   // 4) persist in simulations table
   await db("simulations")
@@ -46,11 +47,21 @@ export async function makeSimulationForApplication(applicationId) {
       application_id: row.application_id,
       status: "ready",
       url,
+      public_token: token,
       attempts: 1,
       updated_at: db.fn.now(),
     })
     .onConflict("application_id")
-    .merge({ status: "ready", url, attempts: db.raw("attempts + 1"), updated_at: db.fn.now() });
+    .merge({
+      status: "ready",
+      url,
+      public_token: token,
+      attempts: db.raw("attempts + 1"),
+      access_count: 0,
+      first_accessed_at: null,
+      last_accessed_at: null,
+      updated_at: db.fn.now(),
+    });
 
   return url;
 }
