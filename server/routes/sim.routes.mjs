@@ -1,12 +1,23 @@
 // server/routes/sim.routes.mjs
 import { Router } from "express";
 import { z } from "zod";
-import { Resend } from "resend";
 import { db } from "../db.mjs";
 
 const r = Router();
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+let resend = null;
+try {
+  const mod = await import("resend");
+  const ResendCtor = mod?.Resend || mod?.default || null;
+  if (ResendCtor) {
+    resend = new ResendCtor(process.env.RESEND_API_KEY);
+  } else {
+    console.warn("[sim.routes] Resend module missing export – email disabled.");
+  }
+} catch (e) {
+  console.warn("[sim.routes] Resend not installed – email disabled.", e?.message || e);
+}
+
 const SIM_BASE_URL = process.env.SIM_BASE_URL || "https://<your-sim>.onrender.com";
 
 const SendSimLinkSchema = z.object({
@@ -34,9 +45,14 @@ This link is unique to your application.
 
 — Recrio`;
 
+  if (!resend) {
+    console.warn("[sim.routes] Resend client unavailable – skipping email send.");
+    return res.json({ ok: false, skipped: true, reason: "email_disabled" });
+  }
+
   try {
     await resend.emails.send({
-      from: "Recrio <onboarding@resend.dev>", // switch to your verified domain later
+      from: "Recrio <onboarding@resend.dev>",
       to: candidateEmail,
       subject,
       text,
