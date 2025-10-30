@@ -7,6 +7,7 @@ import { requireAuth } from "../../middleware/requireAuth.mjs";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { fetchSimulationAnalyses, fetchSimulationAnalysis, computeOverallFromReport } from "../../lib/supabaseAnalysis.mjs";
 
 /* ------------------------------------------------------------------------- */
 /* Simulation Edge Function config                                            */
@@ -435,7 +436,19 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
         `)
       );
 
+    const supaAnalyses = await fetchSimulationAnalyses(apps.map((a) => a.id));
+    for (const app of apps) {
+      const sup = supaAnalyses.get(Number(app.id)) || null;
+      app.analysis_overall_score = sup?.analysis_overall_score ?? null;
+      app.analysis_generated_at = sup?.analysis_generated_at ?? null;
+    }
+
     const parseOverall = (a) => {
+      const analysisOverall = a?.analysis_overall_score;
+      if (analysisOverall != null) {
+        const nAnalysis = typeof analysisOverall === "number" ? analysisOverall : Number(analysisOverall);
+        if (Number.isFinite(nAnalysis)) return nAnalysis;
+      }
       const v = a?.ai_scores?.overall ?? a?.ai_scores?.score ?? null;
       const n = typeof v === "number" ? v : Number(v);
       return Number.isFinite(n) ? n : null;
@@ -542,6 +555,15 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
       overall: avgFinal?.overall ?? null,
     };
 
+    const supAnalysis = await fetchSimulationAnalysis(id);
+    const analysis_report = supAnalysis?.analysis_report ?? null;
+    const analysis_generated_at = supAnalysis?.analysis_generated_at ?? null;
+    const analysis_overall_score = supAnalysis?.analysis_overall_score ?? computeOverallFromReport(analysis_report);
+
+    if (analysis_overall_score != null && Number.isFinite(Number(analysis_overall_score))) {
+      ai_scores.overall = Number(analysis_overall_score);
+    }
+
     return res.json({
       id: a.id,
       job_id: a.job_id,
@@ -583,7 +605,10 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
           final_score: toPct(an.final_score),
           created_at: an.created_at
         }))
-      }
+      },
+      analysis_report,
+      analysis_generated_at,
+      analysis_overall_score: analysis_overall_score ?? null,
     });
 
   } catch (e) {

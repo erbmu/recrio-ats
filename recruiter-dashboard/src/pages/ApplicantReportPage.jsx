@@ -20,6 +20,21 @@ const pctOrNA = (v) => {
   return `${pct}/100`;
 };
 
+const toDisplayScore = (v) => {
+  if (v == null) return null;
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return null;
+  return n <= 1 ? Math.round(n * 100) : Math.round(n);
+};
+
+const labelFromKey = (key = "") =>
+  key
+    .replace(/_/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+
 export default function ApplicantReportPage() {
   const { jobId, applicantId } = useParams();
   const navigate = useNavigate();
@@ -48,6 +63,51 @@ export default function ApplicantReportPage() {
 
   const scores = app?.ai_scores || {};
   const simSummary = app?.ai_summary || null;
+  const analysisReport = app?.analysis_report || null;
+  const analysisGeneratedAt = app?.analysis_generated_at || null;
+  const analysisOverall = app?.analysis_overall_score ?? analysisReport?.overallStartupReadinessIndex ?? null;
+
+  const analysisDimensions = React.useMemo(() => {
+    if (!analysisReport || typeof analysisReport !== "object") return [];
+    return Object.entries(analysisReport)
+      .filter(([key]) => key !== "overallStartupReadinessIndex")
+      .map(([key, value]) => {
+        if (value == null) return null;
+        if (typeof value === "number" || typeof value === "string") {
+          const score = toDisplayScore(value);
+          return { key, score, summary: "" };
+        }
+        if (typeof value === "object") {
+          if (Array.isArray(value)) return null;
+          let score =
+            value.score ??
+            value.value ??
+            value.index ??
+            value.overall ??
+            value.percentage ??
+            value.scaled ??
+            null;
+          if (score != null) {
+            const n = Number(score);
+            score = Number.isFinite(n) ? n : null;
+          }
+          let summary =
+            value.analysis ??
+            value.summary ??
+            value.text ??
+            value.comment ??
+            value.description ??
+            value.detail ??
+            value.reason ??
+            "";
+          if (typeof summary !== "string") summary = "";
+          summary = summary.trim();
+          return { key, score, summary };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }, [analysisReport]);
 
   // Authenticated open of file (preview in new tab)
   const openFile = async (kind, filenameHint = "file") => {
@@ -131,6 +191,56 @@ export default function ApplicantReportPage() {
             <Card title="Business Impact" value={pctOrNA(scores.business_impact)} />
             <Card title="Technical Accuracy" value={pctOrNA(scores.technical_accuracy)} />
             <Card title="Communication" value={pctOrNA(scores.communication)} />
+          </div>
+
+          {/* AI Evaluation */}
+          <div className="bg-white border border-gray-200 rounded-lg p-6 mb-10 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <h2 className="text-lg font-semibold text-gray-800">AI Evaluation</h2>
+              {analysisGeneratedAt && (
+                <time className="text-xs uppercase tracking-wide text-gray-500">
+                  Generated on {new Date(analysisGeneratedAt).toLocaleString()}
+                </time>
+              )}
+            </div>
+
+            {analysisReport ? (
+              <>
+                <div className="mt-5">
+                  <div className="text-sm text-gray-500">Overall readiness</div>
+                  <div className="text-4xl font-semibold text-gray-900 mt-1">
+                    {toDisplayScore(analysisOverall) ?? "—"}
+                    <span className="text-lg text-gray-400 ml-2">/100</span>
+                  </div>
+                </div>
+
+                {analysisDimensions.length > 0 ? (
+                  <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {analysisDimensions.map(({ key, score, summary }) => (
+                      <div key={key} className="rounded-lg border border-gray-200 px-4 py-3">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-sm font-medium text-gray-900">{labelFromKey(key)}</span>
+                          <span className="text-sm text-gray-600">
+                            {toDisplayScore(score) != null ? `${toDisplayScore(score)}/100` : "—"}
+                          </span>
+                        </div>
+                        {summary && (
+                          <p className="mt-2 text-sm text-gray-600 leading-relaxed">{summary}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-gray-600">
+                    The detailed dimension breakdown will appear here once available.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-gray-600 mt-2">
+                AI analysis not yet available. Check back once the simulation has finished processing.
+              </p>
+            )}
           </div>
 
           {/* Candidate Details */}

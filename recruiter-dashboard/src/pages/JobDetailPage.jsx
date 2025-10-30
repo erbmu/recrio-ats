@@ -9,6 +9,12 @@ const TableCell = ({ children, className = "" }) => (
 
 // Prefer numeric ai_score (0..100). Fallback to ai_scores.* for display.
 const formatScore = (row) => {
+  const prefer = row?.analysis_overall_score;
+  if (prefer != null && Number.isFinite(Number(prefer))) {
+    const n = Number(prefer);
+    const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
+    return `${pct}%`;
+  }
   if (row?.ai_score != null && Number.isFinite(Number(row.ai_score))) {
     return `${Math.round(Number(row.ai_score))}%`;
   }
