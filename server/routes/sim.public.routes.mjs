@@ -28,6 +28,8 @@ r.get("/api/sim/public/resolve/:token", async (req, res, next) => {
         .where("sim.public_token", token)
         .select(
           "sim.id as sim_id",
+          "sim.public_token",
+          "sim.external_simulation_id",
           "sim.status",
           "sim.access_count",
           "ap.id as application_id",
@@ -78,6 +80,7 @@ r.get("/api/sim/public/resolve/:token", async (req, res, next) => {
       }
 
       responsePayload = {
+        simulationId: row.external_simulation_id || row.sim_id,
         application: {
           id: row.application_id,
           candidate_name: row.candidate_name,
