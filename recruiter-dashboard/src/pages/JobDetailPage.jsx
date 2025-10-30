@@ -124,29 +124,13 @@ export default function JobDetailPage() {
                   <TableCell className="w-24">{idx + 1}</TableCell>
                   <TableCell>{a.candidate_name || "Applicant"}</TableCell>
                   <TableCell className="w-40">{formatScore(a)}</TableCell>
-                  <TableCell className="w-48">
-                    <div className="flex flex-col gap-1">
-                      <button
-                        onClick={() => navigate(`/dashboard/job/${id}/applicant/${a.id}`)}
-                        className="text-blue-600 hover:underline text-left"
-                      >
-                        View Report
-                      </button>
-                      {a.sim_status === "ready" && a.sim_url ? (
-                        <a
-                          href={a.sim_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-indigo-600 hover:underline"
-                        >
-                          Open candidate's simulation
-                        </a>
-                      ) : (
-                        <span className="text-xs text-gray-500">
-                          Simulation: {a.sim_status ? a.sim_status : "pending"}
-                        </span>
-                      )}
-                    </div>
+                  <TableCell className="w-40">
+                    <button
+                      onClick={() => navigate(`/dashboard/job/${id}/applicant/${a.id}`)}
+                      className="text-blue-600 hover:underline"
+                    >
+                      View Report
+                    </button>
                   </TableCell>
                 </tr>
               ))}
