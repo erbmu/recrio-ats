@@ -47,6 +47,13 @@ export default function ApplyPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   }, []);
 
+  const companyDescription = useMemo(() => {
+    const desc = companyOrg?.company_description?.trim();
+    if (!desc) return "";
+    if (/^test$/i.test(desc)) return "";
+    return desc;
+  }, [companyOrg]);
+
 // Load job
 useEffect(() => {
   let alive = true;
@@ -324,12 +331,23 @@ useEffect(() => {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-white via-zinc-50 to-white">
+      <div className="mx-auto max-w-5xl px-6 py-10">
       {/* ======= Header ======= */}
-      <header className="mb-8">
+      <header className="mb-8 space-y-6">
+        <div className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-white/70 px-6 py-5 shadow-sm backdrop-blur-sm">
+          <div className="space-y-1">
+            <span className="text-[11px] uppercase tracking-[0.4em] text-zinc-500">Recrio</span>
+            <p className="text-sm text-zinc-500">Thoughtful hiring for ambitious teams.</p>
+          </div>
+          <div className="hidden sm:block text-sm text-zinc-400">
+            <span>Careers • Human-first by design</span>
+          </div>
+        </div>
+
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">{job.title}</h1>
+            <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">{job.title}</h1>
             <div className="mt-3 flex flex-wrap gap-2">
               {job.location && pill(job.location)}
               {job.employment_type && pill(job.employment_type)}
@@ -337,12 +355,6 @@ useEffect(() => {
               {job.salary && pill(job.salary)}
             </div>
           </div>
-          <a
-            href="/"
-            className="hidden sm:inline-flex items-center h-10 px-4 rounded-xl border border-zinc-300 text-sm hover:bg-zinc-50"
-          >
-            Back to site
-          </a>
         </div>
 
         {(job.description || job.qualifications) && (
@@ -368,7 +380,7 @@ useEffect(() => {
                 <div>
                   <dt className="sr-only">About</dt>
                   <dd className="whitespace-pre-wrap">
-                    {companyOrg?.company_description || "—"}
+                    {companyDescription || "—"}
                   </dd>
                 </div>
 
@@ -655,6 +667,7 @@ useEffect(() => {
         Tip: Do not upload passwords, government IDs, or other highly sensitive personal data. Only share
         what’s relevant to your application.
       </p>
+      </div>
     </div>
   );
 }
