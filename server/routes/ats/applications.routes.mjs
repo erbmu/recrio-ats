@@ -34,6 +34,32 @@ r.get("/__sim_env", (_req, res) => {
   });
 });
 
+let hasSupabaseSimulationIdColumn = null;
+async function ensureSupabaseSimulationIdColumn() {
+  if (hasSupabaseSimulationIdColumn !== null) return hasSupabaseSimulationIdColumn;
+  try {
+    const row = await db("information_schema.columns")
+      .where({
+        table_schema: "public",
+        table_name: "simulations",
+        column_name: "supabase_simulation_id",
+      })
+      .first();
+    hasSupabaseSimulationIdColumn = !!row;
+  } catch {
+    hasSupabaseSimulationIdColumn = false;
+  }
+  return hasSupabaseSimulationIdColumn;
+}
+r.get("/__sim_env", (_req, res) => {
+  res.json({
+    SIM_FUNCTION_URL: !!process.env.SIM_FUNCTION_URL,
+    SIM_SUPABASE_ANON_KEY: !!process.env.SIM_SUPABASE_ANON_KEY,
+    SIM_WEBHOOK_SECRET: !!process.env.SIM_WEBHOOK_SECRET,
+    function_url_preview: (process.env.SIM_FUNCTION_URL || "").slice(0, 80)
+  });
+});
+
 /* ------------------------------------------------------------------------- */
 /* best-effort rate-limit import with safe fallback                           */
 /* ------------------------------------------------------------------------- */
@@ -410,36 +436,49 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
       .groupBy("a.application_id")
       .as("rc");
 
+    const includeSupabaseColumn = await ensureSupabaseSimulationIdColumn();
+    const selectFields = [
+      "ap.id",
+      "ap.job_id",
+      "ap.candidate_name",
+      "ap.candidate_email",
+      "ap.status",
+      "ap.ai_summary",
+      "ap.created_at",
+      "sim.status as sim_status",
+      "sim.url as sim_url",
+    ];
+    if (includeSupabaseColumn) {
+      selectFields.push("sim.supabase_simulation_id");
+    }
+    selectFields.push(
+      db.raw(`
+        jsonb_build_object(
+          'business_impact', to_jsonb(rc.business_impact),
+          'technical_accuracy', to_jsonb(rc.technical_accuracy),
+          'communication', to_jsonb(rc.communication),
+          'overall', to_jsonb(fa.overall)
+        ) AS ai_scores
+      `)
+    );
+
     const apps = await db("applications as ap")
       .where({ job_id: jobId })
       .orderBy("ap.id", "desc")
       .leftJoin("simulations as sim", "sim.application_id", "ap.id")
       .leftJoin(avgFinalSub, "ap.id", "fa.application_id")
       .leftJoin(avgRubricSub, "ap.id", "rc.application_id")
-      .select(
-        "ap.id",
-        "ap.job_id",
-        "ap.candidate_name",
-        "ap.candidate_email",
-        "ap.status",
-        "ap.ai_summary",
-        "ap.created_at",
-        "sim.status as sim_status",
-        "sim.url as sim_url",
-        "sim.supabase_simulation_id",
-        db.raw(`
-          jsonb_build_object(
-            'business_impact', to_jsonb(rc.business_impact),
-            'technical_accuracy', to_jsonb(rc.technical_accuracy),
-            'communication', to_jsonb(rc.communication),
-            'overall', to_jsonb(fa.overall)
-          ) AS ai_scores
-        `)
-      );
+      .select(selectFields);
+
+    if (!includeSupabaseColumn) {
+      for (const app of apps) {
+        app.supabase_simulation_id = null;
+      }
+    }
 
     const { bySupabaseId, byApplicationId } = await fetchSimulationAnalyses({
       applicationIds: apps.map((a) => a.id),
-      supabaseIds: apps.map((a) => a.supabase_simulation_id).filter(Boolean),
+      supabaseIds: includeSupabaseColumn ? apps.map((a) => a.supabase_simulation_id).filter(Boolean) : [],
     });
     for (const app of apps) {
       const sup =
@@ -486,21 +525,26 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
       return res.status(400).json({ error: "bad_id" });
     }
 
+    const includeSupabaseColumn = await ensureSupabaseSimulationIdColumn();
+    const detailFields = [
+      "ap.*",
+      "j.title as job_title",
+      "j.slug as job_slug",
+      "o.slug as org_slug",
+      "j.org_id as job_org_id",
+      "sf.final_score as final_score",
+    ];
+    if (includeSupabaseColumn) {
+      detailFields.push("simdet.supabase_simulation_id as supabase_simulation_id");
+    }
+
     const a = await db("applications as ap")
       .join("jobs as j", "j.id", "ap.job_id")
       .join("organizations as o", "o.id", "j.org_id")
       .leftJoin("simulation_feedbacks as sf", "sf.application_id", "ap.id")
       .leftJoin("simulations as simdet", "simdet.application_id", "ap.id")
       .where("ap.id", id)
-      .select(
-        "ap.*",
-        "j.title as job_title",
-        "j.slug as job_slug",
-        "o.slug as org_slug",
-        "j.org_id as job_org_id",
-        "sf.final_score as final_score",
-        "simdet.supabase_simulation_id as supabase_simulation_id"
-      )
+      .select(detailFields)
       .first();
 
     if (!a || Number(a.job_org_id) !== Number(req.auth.orgId)) {
@@ -566,7 +610,7 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
 
     const supAnalysis = await fetchSimulationAnalysis({
       applicationId: id,
-      supabaseSimulationId: a.supabase_simulation_id,
+      supabaseSimulationId: includeSupabaseColumn ? a.supabase_simulation_id : undefined,
     });
     const analysis_report = supAnalysis?.analysis_report ?? null;
     const analysis_generated_at = supAnalysis?.analysis_generated_at ?? null;
