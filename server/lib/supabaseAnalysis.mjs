@@ -2,7 +2,10 @@
 // Helpers to read simulation analysis data from Supabase REST using the service role key.
 
 const SUPABASE_REST_BASE =
-  (process.env.SUPABASE_URL || process.env.SUPABASE_PROJECT_URL || process.env.SUPABASE_REST_URL || "")
+  (process.env.SUPABASE_URL ||
+    process.env.SUPABASE_PROJECT_URL ||
+    process.env.SUPABASE_REST_URL ||
+    "")
     .trim()
     .replace(/\/+$/, "");
 
@@ -53,20 +56,24 @@ const computeOverallFromReport = (report) => {
 
 const normalizeRow = (row) => {
   if (!row || typeof row !== "object") return null;
-  const applicationId = Number(row.application_id ?? row.applicationId);
-  if (!Number.isFinite(applicationId)) return null;
+  const applicationRaw = row.application_id ?? row.applicationId ?? null;
+  const applicationId = Number(applicationRaw);
+  const supabaseId = row.id ?? row.simulation_id ?? row.supabase_simulation_id ?? null;
+  if (!supabaseId && !Number.isFinite(applicationId)) return null;
+
   let analysis_report = row.analysis_report ?? row.analysisReport ?? null;
   if (typeof analysis_report === "string") {
     try {
       analysis_report = JSON.parse(analysis_report);
     } catch {
-      // keep as raw string
+      // keep string if parsing fails
     }
   }
   const analysis_generated_at = row.analysis_generated_at ?? row.analysisGeneratedAt ?? null;
   const analysis_overall_score = computeOverallFromReport(analysis_report);
   return {
-    application_id: applicationId,
+    supabase_id: typeof supabaseId === "string" ? supabaseId : null,
+    application_id: Number.isFinite(applicationId) ? applicationId : null,
     analysis_report,
     analysis_generated_at,
     analysis_overall_score,
@@ -84,80 +91,87 @@ const querySupabase = async (filter) => {
     method: "GET",
     headers: baseHeaders,
   });
-  if (!resp.ok) {
-    throw new Error(`supabase_fetch_failed ${resp.status}`);
-  }
+  if (!resp.ok) throw new Error(`supabase_fetch_failed ${resp.status}`);
   return resp.json();
 };
 
-export async function fetchSimulationAnalyses({ applicationIds = [], supabaseIds = [] } = {}) {
-  if (!hasConfig()) return new Map();
-  const byApp = Array.from(
+const uniqueNumbers = (values = []) =>
+  Array.from(
     new Set(
-      applicationIds
-        .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id))
-    )
-  );
-  const bySup = Array.from(
-    new Set(
-      supabaseIds
-        .map((id) => (typeof id === "string" ? id.trim() : ""))
-        .filter((id) => id)
+      values
+        .map((v) => Number(v))
+        .filter((v) => Number.isFinite(v))
     )
   );
 
+const uniqueStrings = (values = []) =>
+  Array.from(
+    new Set(
+      values
+        .map((v) => (typeof v === "string" ? v.trim() : ""))
+        .filter(Boolean)
+    )
+  );
+
+export async function fetchSimulationAnalyses({ applicationIds = [], supabaseIds = [] } = {}) {
+  if (!hasConfig()) return { bySupabaseId: new Map(), byApplicationId: new Map() };
+
+  const byApp = uniqueNumbers(applicationIds);
+  const bySup = uniqueStrings(supabaseIds);
+
+  const bySupabaseId = new Map();
+  const byApplicationId = new Map();
+
+  const ingestRows = (rows) => {
+    if (!Array.isArray(rows)) return;
+    for (const row of rows) {
+      const normalized = normalizeRow(row);
+      if (!normalized) continue;
+      if (normalized.supabase_id) bySupabaseId.set(normalized.supabase_id, normalized);
+      if (normalized.application_id != null) byApplicationId.set(normalized.application_id, normalized);
+    }
+  };
+
   try {
-    const map = new Map();
     if (bySup.length) {
       const filter =
-        bySup.length === 1
-          ? { id: `eq.${bySup[0]}` }
-          : { id: `in.(${bySup.join(",")})` };
+        bySup.length === 1 ? { id: `eq.${bySup[0]}` } : { id: `in.(${bySup.join(",")})` };
       const rows = await querySupabase(filter);
-      if (Array.isArray(rows)) {
-        for (const row of rows) {
-          const normalized = normalizeRow(row);
-          if (normalized) {
-            map.set(normalized.application_id, normalized);
-          }
-        }
-      }
+      ingestRows(rows);
     }
-    const remainingAppIds = byApp.filter((id) => !map.has(id));
+
+    const remainingAppIds = byApp.filter((id) => !byApplicationId.has(id));
     if (remainingAppIds.length) {
       const filter =
         remainingAppIds.length === 1
           ? { application_id: `eq.${remainingAppIds[0]}` }
           : { application_id: `in.(${remainingAppIds.join(",")})` };
       const rows = await querySupabase(filter);
-      if (Array.isArray(rows)) {
-        for (const row of rows) {
-          const normalized = normalizeRow(row);
-          if (normalized) {
-            map.set(normalized.application_id, normalized);
-          }
-        }
-      }
+      ingestRows(rows);
     }
-    return map;
   } catch (err) {
     if (!fetchErrorWarned) {
       fetchErrorWarned = true;
       console.warn("[supabase] Error fetching simulations:", err?.message || err);
     }
-    return new Map();
   }
+
+  return { bySupabaseId, byApplicationId };
 }
 
 export async function fetchSimulationAnalysis({ applicationId, supabaseSimulationId } = {}) {
-  const results = await fetchSimulationAnalyses({
+  const { bySupabaseId, byApplicationId } = await fetchSimulationAnalyses({
     applicationIds: applicationId != null ? [applicationId] : [],
     supabaseIds: supabaseSimulationId ? [supabaseSimulationId] : [],
   });
+
+  if (supabaseSimulationId && bySupabaseId.has(supabaseSimulationId)) {
+    return bySupabaseId.get(supabaseSimulationId) || null;
+  }
+
   const key = Number(applicationId);
-  if (Number.isFinite(key)) {
-    return results.get(key) || null;
+  if (Number.isFinite(key) && byApplicationId.has(key)) {
+    return byApplicationId.get(key) || null;
   }
   return null;
 }

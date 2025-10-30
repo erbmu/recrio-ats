@@ -437,12 +437,15 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
         `)
       );
 
-    const supaAnalyses = await fetchSimulationAnalyses({
+    const { bySupabaseId, byApplicationId } = await fetchSimulationAnalyses({
       applicationIds: apps.map((a) => a.id),
       supabaseIds: apps.map((a) => a.supabase_simulation_id).filter(Boolean),
     });
     for (const app of apps) {
-      const sup = supaAnalyses.get(Number(app.id)) || null;
+      const sup =
+        (app.supabase_simulation_id && bySupabaseId.get(app.supabase_simulation_id)) ||
+        byApplicationId.get(Number(app.id)) ||
+        null;
       app.analysis_overall_score = sup?.analysis_overall_score ?? null;
       app.analysis_generated_at = sup?.analysis_generated_at ?? null;
     }
