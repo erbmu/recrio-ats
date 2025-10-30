@@ -8,6 +8,7 @@ import morgan from "morgan";
 import authRoutes from "./routes/auth.mjs";
 import adminRoutes from "./routes/admin.mjs";
 import simPublicRoutes from "./routes/sim.public.routes.mjs";
+import simRoutes from "./routes/sim.routes.mjs";
 
 // ATS APIs
 import atsJobsRoutes from "./routes/ats/jobs.routes.mjs";
@@ -40,6 +41,7 @@ app.use(morgan(isProd ? "combined" : "tiny"));
 app.use(orgRoutes);
 
 app.use(simPublicRoutes);
+app.use(simRoutes);
 
 
 // VERY VERBOSE per-request logger

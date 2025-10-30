@@ -2,6 +2,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { Resend } from "resend";
+import { db } from "../db.mjs";
 
 const r = Router();
 
@@ -44,6 +45,50 @@ This link is unique to your application.
   } catch (e) {
     console.error("[sim.routes] mail_failed:", e);
     res.status(500).json({ error: "mail_failed" });
+  }
+});
+
+r.post("/api/simulations/register", async (req, res) => {
+  try {
+    const secret = process.env.SIM_WEBHOOK_SECRET || "";
+    const headerSecret = String(req.get("x-sim-webhook-secret") || "");
+    if (secret) {
+      if (!headerSecret || headerSecret !== secret) {
+        return res.status(403).json({ error: "forbidden" });
+      }
+    }
+
+    const schema = z.object({
+      applicationId: z.union([z.string(), z.number()]),
+      supabaseSimulationId: z.string().uuid(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "bad_request" });
+    }
+
+    const applicationId = Number(parsed.data.applicationId);
+    const supabaseSimulationId = parsed.data.supabaseSimulationId;
+    if (!Number.isInteger(applicationId) || applicationId <= 0) {
+      return res.status(400).json({ error: "bad_application_id" });
+    }
+
+    const row = await db("simulations").where({ application_id: applicationId }).first("application_id");
+    if (!row) {
+      return res.status(404).json({ error: "simulation_not_found" });
+    }
+
+    await db("simulations")
+      .where({ application_id: applicationId })
+      .update({
+        supabase_simulation_id: supabaseSimulationId,
+        updated_at: db.fn.now(),
+      });
+
+    return res.json({ ok: true, applicationId, supabaseSimulationId });
+  } catch (err) {
+    console.error("[sim.routes] register_supabase_failed", err);
+    return res.status(500).json({ error: "internal_error" });
   }
 });
 

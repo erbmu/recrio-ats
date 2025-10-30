@@ -426,6 +426,7 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
         "ap.created_at",
         "sim.status as sim_status",
         "sim.url as sim_url",
+        "sim.supabase_simulation_id",
         db.raw(`
           jsonb_build_object(
             'business_impact', to_jsonb(rc.business_impact),
@@ -436,7 +437,10 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
         `)
       );
 
-    const supaAnalyses = await fetchSimulationAnalyses(apps.map((a) => a.id));
+    const supaAnalyses = await fetchSimulationAnalyses({
+      applicationIds: apps.map((a) => a.id),
+      supabaseIds: apps.map((a) => a.supabase_simulation_id).filter(Boolean),
+    });
     for (const app of apps) {
       const sup = supaAnalyses.get(Number(app.id)) || null;
       app.analysis_overall_score = sup?.analysis_overall_score ?? null;
@@ -483,6 +487,7 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
       .join("jobs as j", "j.id", "ap.job_id")
       .join("organizations as o", "o.id", "j.org_id")
       .leftJoin("simulation_feedbacks as sf", "sf.application_id", "ap.id")
+      .leftJoin("simulations as simdet", "simdet.application_id", "ap.id")
       .where("ap.id", id)
       .select(
         "ap.*",
@@ -490,7 +495,8 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
         "j.slug as job_slug",
         "o.slug as org_slug",
         "j.org_id as job_org_id",
-        "sf.final_score as final_score"
+        "sf.final_score as final_score",
+        "simdet.supabase_simulation_id as supabase_simulation_id"
       )
       .first();
 
@@ -555,7 +561,10 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
       overall: avgFinal?.overall ?? null,
     };
 
-    const supAnalysis = await fetchSimulationAnalysis(id);
+    const supAnalysis = await fetchSimulationAnalysis({
+      applicationId: id,
+      supabaseSimulationId: a.supabase_simulation_id,
+    });
     const analysis_report = supAnalysis?.analysis_report ?? null;
     const analysis_generated_at = supAnalysis?.analysis_generated_at ?? null;
     const analysis_overall_score = supAnalysis?.analysis_overall_score ?? computeOverallFromReport(analysis_report);
