@@ -1,5 +1,5 @@
 // server/lib/supabaseAnalysis.mjs
-// Helpers to read simulation analysis data from Supabase REST using the service role key.
+// Helpers to pull simulation analysis metadata from Supabase using the service role key.
 
 const SUPABASE_REST_BASE =
   (process.env.SUPABASE_URL ||
@@ -56,23 +56,31 @@ const computeOverallFromReport = (report) => {
 
 const normalizeRow = (row) => {
   if (!row || typeof row !== "object") return null;
+  const externalRaw =
+    row.external_simulation_id ??
+    row.externalSimulationId ??
+    row.external_simulationID ??
+    null;
+  const simulationKey = externalRaw != null ? String(externalRaw) : null;
+
   const applicationRaw = row.application_id ?? row.applicationId ?? null;
   const applicationId = Number(applicationRaw);
-  const supabaseId = row.id ?? row.simulation_id ?? row.supabase_simulation_id ?? null;
-  if (!supabaseId && !Number.isFinite(applicationId)) return null;
+
+  if (!simulationKey && !Number.isFinite(applicationId)) return null;
 
   let analysis_report = row.analysis_report ?? row.analysisReport ?? null;
   if (typeof analysis_report === "string") {
     try {
       analysis_report = JSON.parse(analysis_report);
     } catch {
-      // keep string if parsing fails
+      // leave as string
     }
   }
   const analysis_generated_at = row.analysis_generated_at ?? row.analysisGeneratedAt ?? null;
   const analysis_overall_score = computeOverallFromReport(analysis_report);
+
   return {
-    supabase_id: typeof supabaseId === "string" ? supabaseId : null,
+    simulation_key: simulationKey,
     application_id: Number.isFinite(applicationId) ? applicationId : null,
     analysis_report,
     analysis_generated_at,
@@ -82,7 +90,10 @@ const normalizeRow = (row) => {
 
 const querySupabase = async (filter) => {
   const url = new URL(`${REST_ENDPOINT}/simulations`);
-  url.searchParams.set("select", "id,application_id,analysis_report,analysis_generated_at");
+  url.searchParams.set(
+    "select",
+    "id,application_id,analysis_report,analysis_generated_at,external_simulation_id"
+  );
   Object.entries(filter).forEach(([key, value]) => {
     url.searchParams.set(key, value);
   });
@@ -95,31 +106,32 @@ const querySupabase = async (filter) => {
   return resp.json();
 };
 
-const uniqueNumbers = (values = []) =>
-  Array.from(
-    new Set(
-      values
-        .map((v) => Number(v))
-        .filter((v) => Number.isFinite(v))
-    )
-  );
+const uniqueNumbers = (values = []) => [
+  ...new Set(
+    values
+      .map((v) => Number(v))
+      .filter((v) => Number.isFinite(v))
+  ),
+];
 
-const uniqueStrings = (values = []) =>
-  Array.from(
-    new Set(
-      values
-        .map((v) => (typeof v === "string" ? v.trim() : ""))
-        .filter(Boolean)
-    )
-  );
+const uniqueStrings = (values = []) => [
+  ...new Set(
+    values
+      .map((v) => (typeof v === "string" ? v.trim() : ""))
+      .filter(Boolean)
+  ),
+];
 
-export async function fetchSimulationAnalyses({ applicationIds = [], supabaseIds = [] } = {}) {
-  if (!hasConfig()) return { bySupabaseId: new Map(), byApplicationId: new Map() };
+export async function fetchSimulationAnalyses({
+  simulationIds = [],
+  applicationIds = [],
+} = {}) {
+  if (!hasConfig()) return { bySimulationId: new Map(), byApplicationId: new Map() };
 
-  const byApp = uniqueNumbers(applicationIds);
-  const bySup = uniqueStrings(supabaseIds);
+  const simulationKeys = uniqueStrings(simulationIds.map((id) => String(id)));
+  const appIds = uniqueNumbers(applicationIds);
 
-  const bySupabaseId = new Map();
+  const bySimulationId = new Map();
   const byApplicationId = new Map();
 
   const ingestRows = (rows) => {
@@ -127,20 +139,26 @@ export async function fetchSimulationAnalyses({ applicationIds = [], supabaseIds
     for (const row of rows) {
       const normalized = normalizeRow(row);
       if (!normalized) continue;
-      if (normalized.supabase_id) bySupabaseId.set(normalized.supabase_id, normalized);
-      if (normalized.application_id != null) byApplicationId.set(normalized.application_id, normalized);
+      if (normalized.simulation_key) {
+        bySimulationId.set(normalized.simulation_key, normalized);
+      }
+      if (normalized.application_id != null) {
+        byApplicationId.set(normalized.application_id, normalized);
+      }
     }
   };
 
   try {
-    if (bySup.length) {
+    if (simulationKeys.length) {
       const filter =
-        bySup.length === 1 ? { id: `eq.${bySup[0]}` } : { id: `in.(${bySup.join(",")})` };
+        simulationKeys.length === 1
+          ? { external_simulation_id: `eq.${simulationKeys[0]}` }
+          : { external_simulation_id: `in.(${simulationKeys.join(",")})` };
       const rows = await querySupabase(filter);
       ingestRows(rows);
     }
 
-    const remainingAppIds = byApp.filter((id) => !byApplicationId.has(id));
+    const remainingAppIds = appIds.filter((id) => !byApplicationId.has(id));
     if (remainingAppIds.length) {
       const filter =
         remainingAppIds.length === 1
@@ -156,17 +174,20 @@ export async function fetchSimulationAnalyses({ applicationIds = [], supabaseIds
     }
   }
 
-  return { bySupabaseId, byApplicationId };
+  return { bySimulationId, byApplicationId };
 }
 
-export async function fetchSimulationAnalysis({ applicationId, supabaseSimulationId } = {}) {
-  const { bySupabaseId, byApplicationId } = await fetchSimulationAnalyses({
+export async function fetchSimulationAnalysis({ simulationId, applicationId } = {}) {
+  const { bySimulationId, byApplicationId } = await fetchSimulationAnalyses({
+    simulationIds: simulationId != null ? [simulationId] : [],
     applicationIds: applicationId != null ? [applicationId] : [],
-    supabaseIds: supabaseSimulationId ? [supabaseSimulationId] : [],
   });
 
-  if (supabaseSimulationId && bySupabaseId.has(supabaseSimulationId)) {
-    return bySupabaseId.get(supabaseSimulationId) || null;
+  if (simulationId != null) {
+    const key = String(simulationId);
+    if (bySimulationId.has(key)) {
+      return bySimulationId.get(key) || null;
+    }
   }
 
   const key = Number(applicationId);

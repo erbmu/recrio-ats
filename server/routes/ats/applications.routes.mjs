@@ -34,32 +34,6 @@ r.get("/__sim_env", (_req, res) => {
   });
 });
 
-let hasSupabaseSimulationIdColumn = null;
-async function ensureSupabaseSimulationIdColumn() {
-  if (hasSupabaseSimulationIdColumn !== null) return hasSupabaseSimulationIdColumn;
-  try {
-    const row = await db("information_schema.columns")
-      .where({
-        table_schema: "public",
-        table_name: "simulations",
-        column_name: "supabase_simulation_id",
-      })
-      .first();
-    hasSupabaseSimulationIdColumn = !!row;
-  } catch {
-    hasSupabaseSimulationIdColumn = false;
-  }
-  return hasSupabaseSimulationIdColumn;
-}
-r.get("/__sim_env", (_req, res) => {
-  res.json({
-    SIM_FUNCTION_URL: !!process.env.SIM_FUNCTION_URL,
-    SIM_SUPABASE_ANON_KEY: !!process.env.SIM_SUPABASE_ANON_KEY,
-    SIM_WEBHOOK_SECRET: !!process.env.SIM_WEBHOOK_SECRET,
-    function_url_preview: (process.env.SIM_FUNCTION_URL || "").slice(0, 80)
-  });
-});
-
 /* ------------------------------------------------------------------------- */
 /* best-effort rate-limit import with safe fallback                           */
 /* ------------------------------------------------------------------------- */
@@ -436,7 +410,6 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
       .groupBy("a.application_id")
       .as("rc");
 
-    const includeSupabaseColumn = await ensureSupabaseSimulationIdColumn();
     const selectFields = [
       "ap.id",
       "ap.job_id",
@@ -445,13 +418,9 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
       "ap.status",
       "ap.ai_summary",
       "ap.created_at",
+      "sim.id as simulation_id",
       "sim.status as sim_status",
       "sim.url as sim_url",
-    ];
-    if (includeSupabaseColumn) {
-      selectFields.push("sim.supabase_simulation_id");
-    }
-    selectFields.push(
       db.raw(`
         jsonb_build_object(
           'business_impact', to_jsonb(rc.business_impact),
@@ -470,19 +439,14 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
       .leftJoin(avgRubricSub, "ap.id", "rc.application_id")
       .select(selectFields);
 
-    if (!includeSupabaseColumn) {
-      for (const app of apps) {
-        app.supabase_simulation_id = null;
-      }
-    }
-
-    const { bySupabaseId, byApplicationId } = await fetchSimulationAnalyses({
+    const { bySimulationId, byApplicationId } = await fetchSimulationAnalyses({
+      simulationIds: apps.map((a) => a.simulation_id).filter((id) => id != null),
       applicationIds: apps.map((a) => a.id),
-      supabaseIds: includeSupabaseColumn ? apps.map((a) => a.supabase_simulation_id).filter(Boolean) : [],
     });
     for (const app of apps) {
+      const simKey = app.simulation_id != null ? String(app.simulation_id) : null;
       const sup =
-        (app.supabase_simulation_id && bySupabaseId.get(app.supabase_simulation_id)) ||
+        (simKey && bySimulationId.get(simKey)) ||
         byApplicationId.get(Number(app.id)) ||
         null;
       app.analysis_overall_score = sup?.analysis_overall_score ?? null;
@@ -525,7 +489,6 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
       return res.status(400).json({ error: "bad_id" });
     }
 
-    const includeSupabaseColumn = await ensureSupabaseSimulationIdColumn();
     const detailFields = [
       "ap.*",
       "j.title as job_title",
@@ -533,10 +496,8 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
       "o.slug as org_slug",
       "j.org_id as job_org_id",
       "sf.final_score as final_score",
+      "simdet.id as simulation_id",
     ];
-    if (includeSupabaseColumn) {
-      detailFields.push("simdet.supabase_simulation_id as supabase_simulation_id");
-    }
 
     const a = await db("applications as ap")
       .join("jobs as j", "j.id", "ap.job_id")
@@ -609,8 +570,8 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
     };
 
     const supAnalysis = await fetchSimulationAnalysis({
+      simulationId: a.simulation_id,
       applicationId: id,
-      supabaseSimulationId: includeSupabaseColumn ? a.supabase_simulation_id : undefined,
     });
     const analysis_report = supAnalysis?.analysis_report ?? null;
     const analysis_generated_at = supAnalysis?.analysis_generated_at ?? null;
