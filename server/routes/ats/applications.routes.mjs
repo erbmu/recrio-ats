@@ -428,8 +428,8 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
           'communication', to_jsonb(rc.communication),
           'overall', to_jsonb(fa.overall)
         ) AS ai_scores
-      `)
-    );
+      `),
+    ];
 
     const apps = await db("applications as ap")
       .where({ job_id: jobId })
