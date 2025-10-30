@@ -529,7 +529,7 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
         "sa.question_label",
         "sa.final_score",
         "sa.created_at",
-        db.raw('COALESCE(q.label, q.question) AS canonical_label')
+        db.raw('COALESCE(q.question, sa.question_label) AS canonical_label')
       );
 
     // Aggregates for report cards
