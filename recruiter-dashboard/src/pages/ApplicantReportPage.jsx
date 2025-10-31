@@ -5,21 +5,6 @@ import { api, API_ORIGIN, tokenStore } from "../api/client";
 
 const API = process.env.REACT_APP_API_URL || "http://localhost:4000";
 
-const Card = ({ title, value }) => (
-  <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-    <p className="text-sm text-gray-500">{title}</p>
-    <p className="text-xl font-semibold text-gray-900 mt-1">{value}</p>
-  </div>
-);
-
-const pctOrNA = (v) => {
-  if (v == null) return "N/A";
-  const n = typeof v === "number" ? v : Number(v);
-  if (!Number.isFinite(n)) return "N/A";
-  const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
-  return `${pct}/100`;
-};
-
 const toDisplayScore = (v) => {
   if (v == null) return null;
   const n = typeof v === "number" ? v : Number(v);
@@ -36,7 +21,7 @@ const labelFromKey = (key = "") =>
     .trim();
 
 export default function ApplicantReportPage() {
-  const { jobId, applicantId } = useParams();
+  const { applicantId } = useParams();
   const navigate = useNavigate();
 
   const [app, setApp] = React.useState(null);
@@ -58,27 +43,39 @@ export default function ApplicantReportPage() {
         if (mounted) setLoading(false);
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [applicantId]);
 
-  const scores = app?.ai_scores || {};
-  const simSummary = app?.ai_summary || null;
   const analysisReport = app?.analysis_report || null;
   const analysisGeneratedAt = app?.analysis_generated_at || null;
-  const analysisOverall = app?.analysis_overall_score ?? analysisReport?.overallStartupReadinessIndex ?? null;
+  const analysisOverall =
+    app?.analysis_overall_score ?? analysisReport?.overallStartupReadinessIndex ?? null;
+
+  const analysisText = React.useMemo(() => {
+    if (!analysisReport || typeof analysisReport !== "object") return "";
+    const candidates = ["analysis", "summary", "text"];
+    for (const field of candidates) {
+      const val = analysisReport[field];
+      if (typeof val === "string" && val.trim()) {
+        return val.trim();
+      }
+    }
+    return "";
+  }, [analysisReport]);
 
   const analysisDimensions = React.useMemo(() => {
     if (!analysisReport || typeof analysisReport !== "object") return [];
     return Object.entries(analysisReport)
-      .filter(([key]) => key !== "overallStartupReadinessIndex")
+      .filter(([key]) => !["overallStartupReadinessIndex", "analysis", "summary", "text"].includes(key))
       .map(([key, value]) => {
         if (value == null) return null;
         if (typeof value === "number" || typeof value === "string") {
           const score = toDisplayScore(value);
           return { key, score, summary: "" };
         }
-        if (typeof value === "object") {
-          if (Array.isArray(value)) return null;
+        if (typeof value === "object" && !Array.isArray(value)) {
           let score =
             value.score ??
             value.value ??
@@ -109,7 +106,6 @@ export default function ApplicantReportPage() {
       .filter(Boolean);
   }, [analysisReport]);
 
-  // Authenticated open of file (preview in new tab)
   const openFile = async (kind, filenameHint = "file") => {
     if (!app) return;
     const token = tokenStore.get();
@@ -138,12 +134,9 @@ export default function ApplicantReportPage() {
       }
       const blob = await r.blob();
       const blobUrl = URL.createObjectURL(blob);
-      // open in new tab
       const win = window.open(blobUrl, "_blank", "noopener");
-      // best-effort revoke after tab opens
       setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
       if (!win) {
-        // popup blocked — fallback download
         const a = document.createElement("a");
         a.href = blobUrl;
         a.download = filenameHint;
@@ -186,64 +179,6 @@ export default function ApplicantReportPage() {
         </div>
       ) : (
         <>
-          {/* Summary scores */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
-            <Card title="Business Impact" value={pctOrNA(scores.business_impact)} />
-            <Card title="Technical Accuracy" value={pctOrNA(scores.technical_accuracy)} />
-            <Card title="Communication" value={pctOrNA(scores.communication)} />
-          </div>
-
-          {/* AI Evaluation */}
-          <div className="bg-white border border-gray-200 rounded-lg p-6 mb-10 shadow-sm">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-              <h2 className="text-lg font-semibold text-gray-800">AI Evaluation</h2>
-              {analysisGeneratedAt && (
-                <time className="text-xs uppercase tracking-wide text-gray-500">
-                  Generated on {new Date(analysisGeneratedAt).toLocaleString()}
-                </time>
-              )}
-            </div>
-
-            {analysisReport ? (
-              <>
-                <div className="mt-5">
-                  <div className="text-sm text-gray-500">Overall readiness</div>
-                  <div className="text-4xl font-semibold text-gray-900 mt-1">
-                    {toDisplayScore(analysisOverall) ?? "—"}
-                    <span className="text-lg text-gray-400 ml-2">/100</span>
-                  </div>
-                </div>
-
-                {analysisDimensions.length > 0 ? (
-                  <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-                    {analysisDimensions.map(({ key, score, summary }) => (
-                      <div key={key} className="rounded-lg border border-gray-200 px-4 py-3">
-                        <div className="flex items-baseline justify-between gap-3">
-                          <span className="text-sm font-medium text-gray-900">{labelFromKey(key)}</span>
-                          <span className="text-sm text-gray-600">
-                            {toDisplayScore(score) != null ? `${toDisplayScore(score)}/100` : "—"}
-                          </span>
-                        </div>
-                        {summary && (
-                          <p className="mt-2 text-sm text-gray-600 leading-relaxed">{summary}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-4 text-sm text-gray-600">
-                    The detailed dimension breakdown will appear here once available.
-                  </p>
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-gray-600 mt-2">
-                AI analysis not yet available. Check back once the simulation has finished processing.
-              </p>
-            )}
-          </div>
-
-          {/* Candidate Details */}
           <div className="bg-white border border-gray-200 rounded-lg p-6 mb-10 shadow-sm">
             <h2 className="text-lg font-semibold text-gray-800 mb-4">Candidate Details</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
@@ -296,54 +231,100 @@ export default function ApplicantReportPage() {
             </div>
           </div>
 
-          {/* Simulation Summary */}
           <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Simulation Report</h2>
-            {simSummary ? (
-              <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
-                {simSummary}
-              </p>
-            ) : (
-              <p className="text-gray-700 text-sm leading-relaxed">
-                The applicant’s simulation breakdown and transcripts will appear here when your
-                simulation results are available. For now, the category-wise scores above serve as the summary.
-              </p>
-            )}
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <h2 className="text-lg font-semibold text-gray-800">AI Simulation Evaluation</h2>
+              {analysisGeneratedAt && (
+                <time className="text-xs uppercase tracking-wide text-gray-500">
+                  Generated on {new Date(analysisGeneratedAt).toLocaleString()}
+                </time>
+              )}
+            </div>
 
-            {(app.files?.career_card || app.files?.resume) && (
-              <div className="mt-6">
-                <h3 className="text-sm font-semibold text-gray-900 mb-2">Submitted files</h3>
-                <ul className="text-sm text-gray-700 space-y-1">
-                  {app.files?.career_card && (
-                    <li>
-                      Career Card —{" "}
-                      <a
-                        href="#"
-                        onClick={(e) => { e.preventDefault(); openFile("career_card", app.files.career_card.name || "career_card.pdf"); }}
-                        className="text-blue-600 hover:underline"
-                        title="Open career card"
-                      >
-                        {app.files.career_card.name} ({app.files.career_card.mime})
-                      </a>
-                    </li>
-                  )}
-                  {app.files?.resume && (
-                    <li>
-                      Resume —{" "}
-                      <a
-                        href="#"
-                        onClick={(e) => { e.preventDefault(); openFile("resume", app.files.resume.name || "resume.pdf"); }}
-                        className="text-blue-600 hover:underline"
-                        title="Open resume"
-                      >
-                        {app.files.resume.name} ({app.files.resume.mime})
-                      </a>
-                    </li>
-                  )}
-                </ul>
-              </div>
+            {analysisReport ? (
+              <>
+                {analysisText && (
+                  <p className="mt-4 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                    {analysisText}
+                  </p>
+                )}
+
+                <div className="mt-6">
+                  <div className="text-sm text-gray-500">Overall readiness</div>
+                  <div className="text-4xl font-semibold text-gray-900 mt-1">
+                    {toDisplayScore(analysisOverall) ?? "—"}
+                    <span className="text-lg text-gray-400 ml-2">/100</span>
+                  </div>
+                </div>
+
+                {analysisDimensions.length > 0 ? (
+                  <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {analysisDimensions.map(({ key, score, summary }) => (
+                      <div key={key} className="rounded-lg border border-gray-200 px-4 py-3">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-sm font-medium text-gray-900">{labelFromKey(key)}</span>
+                          <span className="text-sm text-gray-600">
+                            {toDisplayScore(score) != null ? `${toDisplayScore(score)}/100` : "—"}
+                          </span>
+                        </div>
+                        {summary && (
+                          <p className="mt-2 text-sm text-gray-600 leading-relaxed">{summary}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-gray-600">
+                    The detailed dimension breakdown will appear here once available.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-gray-600 mt-2">
+                AI analysis not yet available. Check back once the simulation has finished processing.
+              </p>
             )}
           </div>
+
+          {(app.files?.career_card || app.files?.resume) && (
+            <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm mt-10">
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Submitted files</h3>
+              <ul className="text-sm text-gray-700 space-y-1">
+                {app.files?.career_card && (
+                  <li>
+                    Career Card —{" "}
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        openFile("career_card", app.files.career_card.name || "career_card.pdf");
+                      }}
+                      className="text-blue-600 hover:underline"
+                      title="Open career card"
+                    >
+                      {app.files.career_card.name} ({app.files.career_card.mime})
+                    </a>
+                  </li>
+                )}
+                {app.files?.resume && (
+                  <li>
+                    Resume —{" "}
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        openFile("resume", app.files.resume.name || "resume.pdf");
+                      }}
+                      className="text-blue-600 hover:underline"
+                      title="Open resume"
+                    >
+                      {app.files.resume.name} ({app.files.resume.mime})
+                    </a>
+                  </li>
+                )}
+              </ul>
+            </div>
+          )}
         </>
       )}
     </div>
