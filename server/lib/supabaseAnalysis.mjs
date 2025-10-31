@@ -88,16 +88,9 @@ const normalizeRow = (row) => {
   };
 };
 
-const quoteValue = (value) => `"${String(value).replace(/"/g, '\\"')}"`;
+const buildEq = (value) => `eq.${String(value)}`;
 
-const buildEq = (value) => `eq.${encodeURIComponent(String(value))}`;
-
-const buildInStrings = (values) => {
-  const quoted = values.map(quoteValue).join(",");
-  return `in.(${quoted})`;
-};
-
-const buildInNumbers = (values) => `in.(${values.join(",")})`;
+const buildInValues = (values) => `in.(${values.map((v) => String(v)).join(",")})`;
 
 const querySupabase = async (filter) => {
   const url = new URL(`${REST_ENDPOINT}/simulations`);
@@ -113,7 +106,19 @@ const querySupabase = async (filter) => {
     method: "GET",
     headers: baseHeaders,
   });
-  if (!resp.ok) throw new Error(`supabase_fetch_failed ${resp.status}`);
+  if (!resp.ok) {
+    let body = "";
+    try {
+      body = await resp.text();
+    } catch (e) {
+      body = e?.message || "";
+    }
+    const err = new Error(`supabase_fetch_failed ${resp.status}`);
+    err.status = resp.status;
+    err.body = body;
+    err.url = url.toString();
+    throw err;
+  }
   return resp.json();
 };
 
@@ -164,7 +169,7 @@ export async function fetchSimulationAnalyses({
       const filter =
         simulationKeys.length === 1
           ? { external_simulation_id: buildEq(simulationKeys[0]) }
-          : { external_simulation_id: buildInStrings(simulationKeys) };
+          : { external_simulation_id: buildInValues(simulationKeys) };
       const rows = await querySupabase(filter);
       ingestRows(rows);
     }
@@ -174,14 +179,20 @@ export async function fetchSimulationAnalyses({
       const filter =
         remainingAppIds.length === 1
           ? { application_id: buildEq(remainingAppIds[0]) }
-          : { application_id: buildInNumbers(remainingAppIds) };
+          : { application_id: buildInValues(remainingAppIds) };
       const rows = await querySupabase(filter);
       ingestRows(rows);
     }
   } catch (err) {
     if (!fetchErrorWarned) {
       fetchErrorWarned = true;
-      console.warn("[supabase] Error fetching simulations:", err?.message || err);
+      console.warn(
+        "[supabase] Error fetching simulations:",
+        err?.message || err,
+        err?.status ? `(status ${err.status})` : "",
+        err?.body ? `body: ${err.body}` : "",
+        err?.url ? `url: ${err.url}` : ""
+      );
     }
   }
 
