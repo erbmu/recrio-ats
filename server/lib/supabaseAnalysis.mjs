@@ -88,6 +88,17 @@ const normalizeRow = (row) => {
   };
 };
 
+const quoteValue = (value) => `"${String(value).replace(/"/g, '\\"')}"`;
+
+const buildEq = (value) => `eq.${encodeURIComponent(String(value))}`;
+
+const buildInStrings = (values) => {
+  const quoted = values.map(quoteValue).join(",");
+  return `in.(${quoted})`;
+};
+
+const buildInNumbers = (values) => `in.(${values.join(",")})`;
+
 const querySupabase = async (filter) => {
   const url = new URL(`${REST_ENDPOINT}/simulations`);
   url.searchParams.set(
@@ -152,8 +163,8 @@ export async function fetchSimulationAnalyses({
     if (simulationKeys.length) {
       const filter =
         simulationKeys.length === 1
-          ? { external_simulation_id: `eq.${simulationKeys[0]}` }
-          : { external_simulation_id: `in.(${simulationKeys.join(",")})` };
+          ? { external_simulation_id: buildEq(simulationKeys[0]) }
+          : { external_simulation_id: buildInStrings(simulationKeys) };
       const rows = await querySupabase(filter);
       ingestRows(rows);
     }
@@ -162,8 +173,8 @@ export async function fetchSimulationAnalyses({
     if (remainingAppIds.length) {
       const filter =
         remainingAppIds.length === 1
-          ? { application_id: `eq.${remainingAppIds[0]}` }
-          : { application_id: `in.(${remainingAppIds.join(",")})` };
+          ? { application_id: buildEq(remainingAppIds[0]) }
+          : { application_id: buildInNumbers(remainingAppIds) };
       const rows = await querySupabase(filter);
       ingestRows(rows);
     }
