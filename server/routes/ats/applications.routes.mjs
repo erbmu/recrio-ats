@@ -678,19 +678,24 @@ r.get("/metrics/overview", requireAuth(), async (req, res, next) => {
   try {
     const orgId = Number(req.auth.orgId);
 
-    const overall = await db("applications as a")
+    const overall = await db("simulation_feedbacks as sf")
+      .join("applications as a", "a.id", "sf.application_id")
       .join("jobs as j", "j.id", "a.job_id")
-      .leftJoin("simulation_feedbacks as sf", "sf.application_id", "a.id")
       .where("j.org_id", orgId)
       .whereNotNull("sf.final_score")
-      .select(db.raw("AVG(sf.final_score)::float as avg_score"), db.raw("COUNT(sf.final_score)::int as completed"))
+      .andWhere("sf.final_score", ">", 0)
+      .select(
+        db.raw("AVG(sf.final_score)::float as avg_score"),
+        db.raw("COUNT(DISTINCT sf.application_id)::int as completed")
+      )
       .first();
 
-    const top = await db("applications as a")
+    const top = await db("simulation_feedbacks as sf")
+      .join("applications as a", "a.id", "sf.application_id")
       .join("jobs as j", "j.id", "a.job_id")
-      .leftJoin("simulation_feedbacks as sf", "sf.application_id", "a.id")
       .where("j.org_id", orgId)
       .whereNotNull("sf.final_score")
+      .andWhere("sf.final_score", ">", 0)
       .andWhere(function () {
         this.whereRaw(`COALESCE(sf.created_at, a.created_at) >= NOW() - INTERVAL '30 days'`);
       })
@@ -699,7 +704,7 @@ r.get("/metrics/overview", requireAuth(), async (req, res, next) => {
         "j.id as job_id",
         "j.title as job_title",
         db.raw("AVG(sf.final_score)::float as avg_score"),
-        db.raw("COUNT(sf.final_score)::int as completed")
+        db.raw("COUNT(DISTINCT sf.application_id)::int as completed")
       )
       .orderBy("avg_score", "desc")
       .limit(5);
