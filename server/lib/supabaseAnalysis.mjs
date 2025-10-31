@@ -63,10 +63,7 @@ const normalizeRow = (row) => {
     null;
   const simulationKey = externalRaw != null ? String(externalRaw) : null;
 
-  const applicationRaw = row.application_id ?? row.applicationId ?? null;
-  const applicationId = Number(applicationRaw);
-
-  if (!simulationKey && !Number.isFinite(applicationId)) return null;
+  if (!simulationKey) return null;
 
   let analysis_report = row.analysis_report ?? row.analysisReport ?? null;
   if (typeof analysis_report === "string") {
@@ -81,7 +78,6 @@ const normalizeRow = (row) => {
 
   return {
     simulation_key: simulationKey,
-    application_id: Number.isFinite(applicationId) ? applicationId : null,
     analysis_report,
     analysis_generated_at,
     analysis_overall_score,
@@ -96,7 +92,7 @@ const querySupabase = async (filter) => {
   const url = new URL(`${REST_ENDPOINT}/simulations`);
   url.searchParams.set(
     "select",
-    "id,application_id,analysis_report,analysis_generated_at,external_simulation_id"
+    "id,analysis_report,analysis_generated_at,external_simulation_id"
   );
   Object.entries(filter).forEach(([key, value]) => {
     url.searchParams.set(key, value);
@@ -138,17 +134,12 @@ const uniqueStrings = (values = []) => [
   ),
 ];
 
-export async function fetchSimulationAnalyses({
-  simulationIds = [],
-  applicationIds = [],
-} = {}) {
-  if (!hasConfig()) return { bySimulationId: new Map(), byApplicationId: new Map() };
+export async function fetchSimulationAnalyses({ simulationIds = [] } = {}) {
+  if (!hasConfig()) return { bySimulationId: new Map() };
 
   const simulationKeys = uniqueStrings(simulationIds.map((id) => String(id)));
-  const appIds = uniqueNumbers(applicationIds);
 
   const bySimulationId = new Map();
-  const byApplicationId = new Map();
 
   const ingestRows = (rows) => {
     if (!Array.isArray(rows)) return;
@@ -157,9 +148,6 @@ export async function fetchSimulationAnalyses({
       if (!normalized) continue;
       if (normalized.simulation_key) {
         bySimulationId.set(normalized.simulation_key, normalized);
-      }
-      if (normalized.application_id != null) {
-        byApplicationId.set(normalized.application_id, normalized);
       }
     }
   };
@@ -174,15 +162,6 @@ export async function fetchSimulationAnalyses({
       ingestRows(rows);
     }
 
-    const remainingAppIds = appIds.filter((id) => !byApplicationId.has(id));
-    if (remainingAppIds.length) {
-      const filter =
-        remainingAppIds.length === 1
-          ? { application_id: buildEq(remainingAppIds[0]) }
-          : { application_id: buildInValues(remainingAppIds) };
-      const rows = await querySupabase(filter);
-      ingestRows(rows);
-    }
   } catch (err) {
     if (!fetchErrorWarned) {
       fetchErrorWarned = true;
@@ -196,13 +175,12 @@ export async function fetchSimulationAnalyses({
     }
   }
 
-  return { bySimulationId, byApplicationId };
+  return { bySimulationId };
 }
 
-export async function fetchSimulationAnalysis({ simulationId, applicationId } = {}) {
-  const { bySimulationId, byApplicationId } = await fetchSimulationAnalyses({
+export async function fetchSimulationAnalysis({ simulationId } = {}) {
+  const { bySimulationId } = await fetchSimulationAnalyses({
     simulationIds: simulationId != null ? [simulationId] : [],
-    applicationIds: applicationId != null ? [applicationId] : [],
   });
 
   if (simulationId != null) {
@@ -210,11 +188,6 @@ export async function fetchSimulationAnalysis({ simulationId, applicationId } = 
     if (bySimulationId.has(key)) {
       return bySimulationId.get(key) || null;
     }
-  }
-
-  const key = Number(applicationId);
-  if (Number.isFinite(key) && byApplicationId.has(key)) {
-    return byApplicationId.get(key) || null;
   }
   return null;
 }

@@ -439,15 +439,13 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
       .leftJoin(avgRubricSub, "ap.id", "rc.application_id")
       .select(selectFields);
 
-    const { bySimulationId, byApplicationId } = await fetchSimulationAnalyses({
+    const { bySimulationId } = await fetchSimulationAnalyses({
       simulationIds: apps.map((a) => a.simulation_id).filter((id) => id != null),
-      applicationIds: apps.map((a) => a.id),
     });
     for (const app of apps) {
       const simKey = app.simulation_id != null ? String(app.simulation_id) : null;
       const sup =
         (simKey && bySimulationId.get(simKey)) ||
-        byApplicationId.get(Number(app.id)) ||
         null;
       app.analysis_overall_score = sup?.analysis_overall_score ?? null;
       app.analysis_generated_at = sup?.analysis_generated_at ?? null;
@@ -571,7 +569,6 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
 
     const supAnalysis = await fetchSimulationAnalysis({
       simulationId: a.simulation_id,
-      applicationId: id,
     });
     const analysis_report = supAnalysis?.analysis_report ?? null;
     const analysis_generated_at = supAnalysis?.analysis_generated_at ?? null;
