@@ -678,40 +678,85 @@ r.get("/metrics/overview", requireAuth(), async (req, res, next) => {
   try {
     const orgId = Number(req.auth.orgId);
 
-    const overall = await db("simulation_feedbacks as sf")
-      .join("applications as a", "a.id", "sf.application_id")
-      .join("jobs as j", "j.id", "a.job_id")
+    const simulations = await db("simulations as sim")
+      .join("applications as ap", "ap.id", "sim.application_id")
+      .join("jobs as j", "j.id", "ap.job_id")
       .where("j.org_id", orgId)
-      .whereNotNull("sf.final_score")
-      .andWhere("sf.final_score", ">", 0)
+      .where("sim.status", "ready")
       .select(
-        db.raw("AVG(sf.final_score)::float as avg_score"),
-        db.raw("COUNT(DISTINCT sf.application_id)::int as completed")
-      )
-      .first();
-
-    const top = await db("simulation_feedbacks as sf")
-      .join("applications as a", "a.id", "sf.application_id")
-      .join("jobs as j", "j.id", "a.job_id")
-      .where("j.org_id", orgId)
-      .whereNotNull("sf.final_score")
-      .andWhere("sf.final_score", ">", 0)
-      .andWhere(function () {
-        this.whereRaw(`COALESCE(sf.created_at, a.created_at) >= NOW() - INTERVAL '30 days'`);
-      })
-      .groupBy("j.id", "j.title")
-      .select(
+        "sim.id as simulation_id",
+        "sim.updated_at",
         "j.id as job_id",
-        "j.title as job_title",
-        db.raw("AVG(sf.final_score)::float as avg_score"),
-        db.raw("COUNT(DISTINCT sf.application_id)::int as completed")
-      )
-      .orderBy("avg_score", "desc")
-      .limit(5);
+        "j.title as job_title"
+      );
+
+    if (!simulations.length) {
+      return res.json({
+        avg_final_score: null,
+        completed_count: 0,
+        top_jobs_30d: [],
+      });
+    }
+
+    const { bySimulationId } = await fetchSimulationAnalyses({
+      simulationIds: simulations.map((s) => s.simulation_id),
+    });
+
+    let sumScores = 0;
+    let countScores = 0;
+    const perJob = new Map();
+    const cutoff = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 30);
+      return d;
+    })();
+
+    for (const sim of simulations) {
+      const sup = bySimulationId.get(String(sim.simulation_id));
+      const scoreRaw = sup?.analysis_overall_score;
+      const score = typeof scoreRaw === "number" ? scoreRaw : Number(scoreRaw);
+      if (!Number.isFinite(score) || score <= 0) continue;
+
+      sumScores += score;
+      countScores += 1;
+
+      if (!perJob.has(sim.job_id)) {
+        perJob.set(sim.job_id, {
+          job_id: sim.job_id,
+          job_title: sim.job_title,
+          totalScore: 0,
+          count: 0,
+          recentScore: 0,
+          recentCount: 0,
+        });
+      }
+      const bucket = perJob.get(sim.job_id);
+      bucket.totalScore += score;
+      bucket.count += 1;
+
+      const updatedAt = sim.updated_at ? new Date(sim.updated_at) : null;
+      if (updatedAt && updatedAt >= cutoff) {
+        bucket.recentScore += score;
+        bucket.recentCount += 1;
+      }
+    }
+
+    const avgScore = countScores ? sumScores / countScores : null;
+
+    const top = Array.from(perJob.values())
+      .map((job) => ({
+        job_id: job.job_id,
+        job_title: job.job_title,
+        avg_score: job.recentCount ? job.recentScore / job.recentCount : job.count ? job.totalScore / job.count : 0,
+        completed: job.recentCount || job.count,
+      }))
+      .filter((job) => job.avg_score > 0 && job.completed > 0)
+      .sort((a, b) => b.avg_score - a.avg_score)
+      .slice(0, 5);
 
     res.json({
-      avg_final_score: overall?.avg_score ?? null,
-      completed_count: overall?.completed ?? 0,
+      avg_final_score: avgScore,
+      completed_count: countScores,
       top_jobs_30d: top,
     });
   } catch (e) {
