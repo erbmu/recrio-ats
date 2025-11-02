@@ -217,11 +217,11 @@ const normalizeResponseRow = (row, idx = 0) => {
 
 const normalizeViolationRow = (row, idx = 0) => {
   const typeRaw =
-    row?.type ??
-    row?.violation_type ??
-    row?.violationType ??
-    row?.code ??
-    row?.category ??
+    (typeof row?.violation_type === "string" && row.violation_type) ||
+    (typeof row?.type === "string" && row.type) ||
+    (typeof row?.violationType === "string" && row.violationType) ||
+    (typeof row?.code === "string" && row.code) ||
+    (typeof row?.category === "string" && row.category) ||
     null;
   const detailRaw =
     (typeof row?.details === "string" && row.details) ||
@@ -274,7 +274,7 @@ export async function fetchSimulationResponsesAndViolations(simulationId) {
 
   try {
     const vioRows = await querySupabaseTable("simulation_violations", {
-      select: "id,violation_type,type,details,timestamp,created_at",
+      select: "id,violation_type,details,timestamp",
       filter: { external_simulation_id: buildEq(key) },
       order: "timestamp.asc",
     });
