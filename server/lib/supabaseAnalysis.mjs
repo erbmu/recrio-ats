@@ -186,12 +186,24 @@ export async function fetchSimulationAnalysis({ simulationId } = {}) {
   return null;
 }
 
+const RESPONSE_COLUMNS = [
+  "content",
+  "response",
+  "response_text",
+  "answer",
+  "body",
+  "value",
+];
+
 const normalizeResponseRow = (row, idx = 0) => {
-  const contentRaw =
-    (typeof row?.response_text === "string" && row.response_text) ||
-    (typeof row?.response === "string" && row.response) ||
-    (typeof row?.answer === "string" && row.answer) ||
-    null;
+  let contentRaw = null;
+  for (const key of RESPONSE_COLUMNS) {
+    const val = row?.[key];
+    if (typeof val === "string" && val.trim()) {
+      contentRaw = val;
+      break;
+    }
+  }
 
   return {
     id: row?.id ?? idx,
@@ -237,7 +249,7 @@ export async function fetchSimulationResponsesAndViolations(simulationId) {
 
   try {
     const respRows = await querySupabaseTable("simulation_responses", {
-      select: "id,question_id,response_text,created_at,metadata",
+      select: "id,question_id,created_at,metadata,content,response,response_text,answer,body,value",
       filter: { external_simulation_id: buildEq(key) },
       order: "created_at.asc",
     });
