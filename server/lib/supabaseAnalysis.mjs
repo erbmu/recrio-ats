@@ -249,7 +249,7 @@ export async function fetchSimulationResponsesAndViolations(simulationId) {
 
   try {
     const respRows = await querySupabaseTable("simulation_responses", {
-      select: "id,question_id,timestamp,metadata,content,response,response_text,answer,body,value",
+      select: "id,question_id,timestamp,response",
       filter: { external_simulation_id: buildEq(key) },
       order: "timestamp.asc",
     });
