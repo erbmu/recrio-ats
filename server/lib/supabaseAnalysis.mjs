@@ -208,7 +208,7 @@ const normalizeResponseRow = (row, idx = 0) => {
   return {
     id: row?.id ?? idx,
     question_id: row?.question_id ?? row?.questionId ?? null,
-    created_at: row?.created_at ?? row?.createdAt ?? null,
+    created_at: row?.timestamp ?? row?.created_at ?? row?.createdAt ?? null,
     content: contentRaw,
     meta: row?.metadata ?? row?.meta ?? null,
     raw: row,
@@ -234,7 +234,7 @@ const normalizeViolationRow = (row, idx = 0) => {
     id: row?.id ?? idx,
     type: typeRaw,
     detail: detailRaw,
-    created_at: row?.created_at ?? row?.createdAt ?? null,
+    created_at: row?.timestamp ?? row?.created_at ?? row?.createdAt ?? null,
     raw: row,
   };
 };
@@ -249,9 +249,9 @@ export async function fetchSimulationResponsesAndViolations(simulationId) {
 
   try {
     const respRows = await querySupabaseTable("simulation_responses", {
-      select: "id,question_id,created_at,metadata,content,response,response_text,answer,body,value",
+      select: "id,question_id,timestamp,metadata,content,response,response_text,answer,body,value",
       filter: { external_simulation_id: buildEq(key) },
-      order: "created_at.asc",
+      order: "timestamp.asc",
     });
     if (Array.isArray(respRows)) {
       respRows.forEach((row, idx) => {
@@ -274,9 +274,9 @@ export async function fetchSimulationResponsesAndViolations(simulationId) {
 
   try {
     const vioRows = await querySupabaseTable("simulation_violations", {
-      select: "id,type,details,created_at",
+      select: "id,violation_type,type,details,timestamp,created_at",
       filter: { external_simulation_id: buildEq(key) },
-      order: "created_at.asc",
+      order: "timestamp.asc",
     });
     if (Array.isArray(vioRows)) {
       vioRows.forEach((row, idx) => {
