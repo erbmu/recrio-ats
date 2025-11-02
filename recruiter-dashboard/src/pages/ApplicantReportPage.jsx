@@ -111,22 +111,8 @@ export default function ApplicantReportPage() {
     if (!Array.isArray(rows)) return [];
     return rows.map((v, idx) => ({
       id: v?.id ?? idx,
-      type:
-        (typeof v?.type === "string" && v.type) ||
-        (typeof v?.raw?.type === "string" && v.raw.type) ||
-        (typeof v?.raw?.violation_type === "string" && v.raw.violation_type) ||
-        (typeof v?.raw?.code === "string" && v.raw.code) ||
-        (typeof v?.raw?.category === "string" && v.raw.category) ||
-        "",
-      detail:
-        (typeof v?.detail === "string" && v.detail) ||
-        (typeof v?.raw?.detail === "string" && v.raw.detail) ||
-        (typeof v?.raw?.details === "string" && v.raw.details) ||
-        (typeof v?.raw?.message === "string" && v.raw.message) ||
-        (typeof v?.raw?.reason === "string" && v.raw.reason) ||
-        "",
-      created_at: v?.created_at ?? v?.raw?.created_at ?? null,
-      raw: v?.raw || v,
+      type: (typeof v?.type === "string" && v.type) || "",
+      created_at: v?.created_at ?? null,
     }));
   }, [app?.simulation_violations]);
 
@@ -319,11 +305,6 @@ export default function ApplicantReportPage() {
                               </time>
                             )}
                           </div>
-                          {(v.detail || (v.raw && Object.keys(v.raw).length > 0)) && (
-                            <p className="mt-2 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                              {v.detail || JSON.stringify(v.raw, null, 2)}
-                            </p>
-                          )}
                         </li>
                       ))}
                     </ul>

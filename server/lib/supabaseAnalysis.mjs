@@ -215,29 +215,12 @@ const normalizeResponseRow = (row, idx = 0) => {
   };
 };
 
-const normalizeViolationRow = (row, idx = 0) => {
-  const typeRaw =
-    (typeof row?.violation_type === "string" && row.violation_type) ||
-    (typeof row?.type === "string" && row.type) ||
-    (typeof row?.violationType === "string" && row.violationType) ||
-    (typeof row?.code === "string" && row.code) ||
-    (typeof row?.category === "string" && row.category) ||
-    null;
-  const detailRaw =
-    (typeof row?.details === "string" && row.details) ||
-    (typeof row?.detail === "string" && row.detail) ||
-    (typeof row?.message === "string" && row.message) ||
-    (typeof row?.reason === "string" && row.reason) ||
-    null;
-
-  return {
-    id: row?.id ?? idx,
-    type: typeRaw,
-    detail: detailRaw,
-    created_at: row?.timestamp ?? row?.created_at ?? row?.createdAt ?? null,
-    raw: row,
-  };
-};
+const normalizeViolationRow = (row, idx = 0) => ({
+  id: row?.id ?? idx,
+  type: (typeof row?.violation_type === "string" && row.violation_type) || null,
+  created_at: row?.timestamp ?? row?.created_at ?? row?.createdAt ?? null,
+  raw: row,
+});
 
 export async function fetchSimulationResponsesAndViolations(simulationId) {
   if (!hasConfig()) return { responses: [], violations: [] };
@@ -274,7 +257,7 @@ export async function fetchSimulationResponsesAndViolations(simulationId) {
 
   try {
     const vioRows = await querySupabaseTable("simulation_violations", {
-      select: "id,violation_type,details,timestamp",
+      select: "id,violation_type,timestamp",
       filter: { external_simulation_id: buildEq(key) },
       order: "timestamp.asc",
     });
