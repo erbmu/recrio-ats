@@ -7,7 +7,12 @@ import { requireAuth } from "../../middleware/requireAuth.mjs";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { fetchSimulationAnalyses, fetchSimulationAnalysis, computeOverallFromReport } from "../../lib/supabaseAnalysis.mjs";
+import {
+  fetchSimulationAnalyses,
+  fetchSimulationAnalysis,
+  fetchSimulationResponsesAndViolations,
+  computeOverallFromReport,
+} from "../../lib/supabaseAnalysis.mjs";
 
 /* ------------------------------------------------------------------------- */
 /* Simulation Edge Function config                                            */
@@ -570,6 +575,8 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
     const supAnalysis = await fetchSimulationAnalysis({
       simulationId: a.simulation_id,
     });
+    const { responses: supResponses, violations: supViolations } =
+      await fetchSimulationResponsesAndViolations(a.simulation_id);
     const analysis_report = supAnalysis?.analysis_report ?? null;
     const analysis_generated_at = supAnalysis?.analysis_generated_at ?? null;
     const analysis_overall_score = supAnalysis?.analysis_overall_score ?? computeOverallFromReport(analysis_report);
@@ -620,6 +627,8 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
           created_at: an.created_at
         }))
       },
+      simulation_responses: supResponses,
+      simulation_violations: supViolations,
       analysis_report,
       analysis_generated_at,
       analysis_overall_score: analysis_overall_score ?? null,

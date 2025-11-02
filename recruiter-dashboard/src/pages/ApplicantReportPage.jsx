@@ -106,6 +106,19 @@ export default function ApplicantReportPage() {
       .filter(Boolean);
   }, [analysisReport]);
 
+  const violations = React.useMemo(() => {
+    const rows = app?.simulation_violations;
+    if (!Array.isArray(rows)) return [];
+    return rows
+      .map((v, idx) => ({
+        id: v?.id ?? idx,
+        type: typeof v?.type === "string" ? v.type : "",
+        detail: typeof v?.detail === "string" ? v.detail : "",
+        created_at: v?.created_at ?? null,
+      }))
+      .filter((v) => v.type || v.detail || v.created_at);
+  }, [app?.simulation_violations]);
+
   const openFile = async (kind, filenameHint = "file") => {
     if (!app) return;
     const token = tokenStore.get();
@@ -277,6 +290,29 @@ export default function ApplicantReportPage() {
                   <p className="mt-4 text-sm text-gray-600">
                     The detailed dimension breakdown will appear here once available.
                   </p>
+                )}
+
+                {violations.length > 0 && (
+                  <div className="mt-6">
+                    <h3 className="text-sm font-semibold text-gray-800">Simulation Violations</h3>
+                    <ul className="mt-3 space-y-3">
+                      {violations.map((v) => (
+                        <li key={v.id} className="rounded-lg border border-red-100 bg-red-50 px-4 py-3">
+                          <div className="flex items-baseline justify-between gap-3">
+                            <span className="text-sm font-medium text-red-600">{labelFromKey(v.type || "Violation")}</span>
+                            {v.created_at && (
+                              <time className="text-xs text-red-500">
+                                {new Date(v.created_at).toLocaleString()}
+                              </time>
+                            )}
+                          </div>
+                          {v.detail && (
+                            <p className="mt-2 text-sm text-gray-700 leading-relaxed">{v.detail}</p>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </>
             ) : (
