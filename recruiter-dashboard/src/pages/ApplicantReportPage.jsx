@@ -288,33 +288,33 @@ export default function ApplicantReportPage() {
                     The detailed dimension breakdown will appear here once available.
                   </p>
                 )}
-
-                {violations.length > 0 && (
-                  <div className="mt-6">
-                    <h3 className="text-sm font-semibold text-gray-800">Simulation Violations</h3>
-                    <ul className="mt-3 space-y-3">
-                      {violations.map((v) => (
-                        <li key={v.id} className="rounded-lg border border-red-100 bg-red-50 px-4 py-3">
-                          <div className="flex items-baseline justify-between gap-3">
-                            <span className="text-sm font-medium text-red-600">
-                              {labelFromKey(v.type || "Violation")}
-                            </span>
-                            {v.created_at && (
-                              <time className="text-xs text-red-500">
-                                {new Date(v.created_at).toLocaleString()}
-                              </time>
-                            )}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </>
             ) : (
               <p className="text-sm text-gray-600 mt-2">
                 AI analysis not yet available. Check back once the simulation has finished processing.
               </p>
+            )}
+
+            {violations.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-semibold text-gray-800">Simulation Violations</h3>
+                <ul className="mt-3 space-y-3">
+                  {violations.map((v) => (
+                    <li key={v.id} className="rounded-lg border border-red-100 bg-red-50 px-4 py-3">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-sm font-medium text-red-600">
+                          {labelFromKey(v.type || "Violation")}
+                        </span>
+                        {v.created_at && (
+                          <time className="text-xs text-red-500">
+                            {new Date(v.created_at).toLocaleString()}
+                          </time>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
 
