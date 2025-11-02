@@ -186,28 +186,46 @@ export async function fetchSimulationAnalysis({ simulationId } = {}) {
   return null;
 }
 
-const normalizeResponseRow = (row) => ({
-  id: row?.id ?? null,
-  question_id: row?.question_id ?? row?.questionId ?? null,
-  created_at: row?.created_at ?? row?.createdAt ?? null,
-  content:
+const normalizeResponseRow = (row, idx = 0) => {
+  const contentRaw =
     (typeof row?.response_text === "string" && row.response_text) ||
     (typeof row?.response === "string" && row.response) ||
     (typeof row?.answer === "string" && row.answer) ||
-    "",
-  meta: row?.metadata ?? row?.meta ?? null,
-});
+    null;
 
-const normalizeViolationRow = (row) => ({
-  id: row?.id ?? null,
-  type: row?.type ?? row?.violation_type ?? row?.violationType ?? "",
-  detail:
+  return {
+    id: row?.id ?? idx,
+    question_id: row?.question_id ?? row?.questionId ?? null,
+    created_at: row?.created_at ?? row?.createdAt ?? null,
+    content: contentRaw,
+    meta: row?.metadata ?? row?.meta ?? null,
+    raw: row,
+  };
+};
+
+const normalizeViolationRow = (row, idx = 0) => {
+  const typeRaw =
+    row?.type ??
+    row?.violation_type ??
+    row?.violationType ??
+    row?.code ??
+    row?.category ??
+    null;
+  const detailRaw =
     (typeof row?.details === "string" && row.details) ||
     (typeof row?.detail === "string" && row.detail) ||
     (typeof row?.message === "string" && row.message) ||
-    "",
-  created_at: row?.created_at ?? row?.createdAt ?? null,
-});
+    (typeof row?.reason === "string" && row.reason) ||
+    null;
+
+  return {
+    id: row?.id ?? idx,
+    type: typeRaw,
+    detail: detailRaw,
+    created_at: row?.created_at ?? row?.createdAt ?? null,
+    raw: row,
+  };
+};
 
 export async function fetchSimulationResponsesAndViolations(simulationId) {
   if (!hasConfig()) return { responses: [], violations: [] };
@@ -224,9 +242,10 @@ export async function fetchSimulationResponsesAndViolations(simulationId) {
       order: "created_at.asc",
     });
     if (Array.isArray(respRows)) {
-      for (const row of respRows) {
-        responses.push(normalizeResponseRow(row));
+      respRows.forEach((row, idx) => {
+        responses.push(normalizeResponseRow(row, idx));
       }
+      );
     }
   } catch (err) {
     if (!fetchErrorWarned) {
@@ -248,9 +267,9 @@ export async function fetchSimulationResponsesAndViolations(simulationId) {
       order: "created_at.asc",
     });
     if (Array.isArray(vioRows)) {
-      for (const row of vioRows) {
-        violations.push(normalizeViolationRow(row));
-      }
+      vioRows.forEach((row, idx) => {
+        violations.push(normalizeViolationRow(row, idx));
+      });
     }
   } catch (err) {
     if (!fetchErrorWarned) {

@@ -109,14 +109,25 @@ export default function ApplicantReportPage() {
   const violations = React.useMemo(() => {
     const rows = app?.simulation_violations;
     if (!Array.isArray(rows)) return [];
-    return rows
-      .map((v, idx) => ({
-        id: v?.id ?? idx,
-        type: typeof v?.type === "string" ? v.type : "",
-        detail: typeof v?.detail === "string" ? v.detail : "",
-        created_at: v?.created_at ?? null,
-      }))
-      .filter((v) => v.type || v.detail || v.created_at);
+    return rows.map((v, idx) => ({
+      id: v?.id ?? idx,
+      type:
+        (typeof v?.type === "string" && v.type) ||
+        (typeof v?.raw?.type === "string" && v.raw.type) ||
+        (typeof v?.raw?.violation_type === "string" && v.raw.violation_type) ||
+        (typeof v?.raw?.code === "string" && v.raw.code) ||
+        (typeof v?.raw?.category === "string" && v.raw.category) ||
+        "",
+      detail:
+        (typeof v?.detail === "string" && v.detail) ||
+        (typeof v?.raw?.detail === "string" && v.raw.detail) ||
+        (typeof v?.raw?.details === "string" && v.raw.details) ||
+        (typeof v?.raw?.message === "string" && v.raw.message) ||
+        (typeof v?.raw?.reason === "string" && v.raw.reason) ||
+        "",
+      created_at: v?.created_at ?? v?.raw?.created_at ?? null,
+      raw: v?.raw || v,
+    }));
   }, [app?.simulation_violations]);
 
   const openFile = async (kind, filenameHint = "file") => {
@@ -299,15 +310,19 @@ export default function ApplicantReportPage() {
                       {violations.map((v) => (
                         <li key={v.id} className="rounded-lg border border-red-100 bg-red-50 px-4 py-3">
                           <div className="flex items-baseline justify-between gap-3">
-                            <span className="text-sm font-medium text-red-600">{labelFromKey(v.type || "Violation")}</span>
+                            <span className="text-sm font-medium text-red-600">
+                              {labelFromKey(v.type || "Violation")}
+                            </span>
                             {v.created_at && (
                               <time className="text-xs text-red-500">
                                 {new Date(v.created_at).toLocaleString()}
                               </time>
                             )}
                           </div>
-                          {v.detail && (
-                            <p className="mt-2 text-sm text-gray-700 leading-relaxed">{v.detail}</p>
+                          {(v.detail || (v.raw && Object.keys(v.raw).length > 0)) && (
+                            <p className="mt-2 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                              {v.detail || JSON.stringify(v.raw, null, 2)}
+                            </p>
                           )}
                         </li>
                       ))}
