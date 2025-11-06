@@ -18,6 +18,8 @@ r.get("/api/sim/public/resolve/:token", async (req, res, next) => {
 
     let responsePayload = null;
     let errorResult = null;
+    const stage = String(req.query.stage || "preview").toLowerCase();
+    const markFinal = stage === "finalize";
 
     await db.transaction(async (trx) => {
       const row = await trx("simulations as sim")
@@ -59,24 +61,28 @@ r.get("/api/sim/public/resolve/:token", async (req, res, next) => {
         return;
       }
 
-      if (row.access_count > 0) {
+      const alreadyUsed = Number(row.access_count || 0) > 0;
+
+      if (markFinal && alreadyUsed) {
         errorResult = { status: 410, body: { error: "used" } };
         return;
       }
 
-      const now = trx.fn.now();
-      const updated = await trx("simulations")
-        .where({ id: row.sim_id })
-        .andWhere("access_count", 0)
-        .update({
-          first_accessed_at: now,
-          last_accessed_at: now,
-          access_count: 1,
-        });
+      if (markFinal) {
+        const now = trx.fn.now();
+        const updated = await trx("simulations")
+          .where({ id: row.sim_id })
+          .andWhere("access_count", 0)
+          .update({
+            first_accessed_at: now,
+            last_accessed_at: now,
+            access_count: 1,
+          });
 
-      if (!updated) {
-        errorResult = { status: 410, body: { error: "used" } };
-        return;
+        if (!updated) {
+          errorResult = { status: 410, body: { error: "used" } };
+          return;
+        }
       }
 
       responsePayload = {
@@ -96,6 +102,9 @@ r.get("/api/sim/public/resolve/:token", async (req, res, next) => {
           company_description: row.company_description,
         },
       };
+      if (alreadyUsed || markFinal) {
+        responsePayload.used = true;
+      }
     });
 
     if (errorResult) {

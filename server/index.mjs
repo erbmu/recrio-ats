@@ -79,6 +79,25 @@ app.use("/api/applications", atsApplicationsRoutes);
 app.use("/api", authRoutes);
 app.use("/api", adminRoutes);
 
+// Central error handler (avoid leaking stack traces/HTML)
+app.use((err, req, res, next) => {
+  try {
+    console.error("[SRV][ERR]", err);
+  } catch {
+    /* ignore logging failure */
+  }
+  if (res.headersSent) return next(err);
+  const status = Number(err?.status || err?.statusCode || 500);
+  const safeStatus = Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500;
+  const message =
+    err?.error ||
+    err?.message ||
+    (safeStatus === 404 ? "not_found" : safeStatus === 403 ? "forbidden" : "internal_error");
+  const payload = { error: message };
+  if (err?.details && typeof err.details === "object") payload.details = err.details;
+  return res.status(safeStatus).json(payload);
+});
+
 /* 404 */
 app.use((req, res) => {
   console.warn(`[SRV][404] No route matched ${req.method} ${req.originalUrl}`);

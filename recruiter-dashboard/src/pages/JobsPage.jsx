@@ -30,6 +30,13 @@ const JobsPage = () => {
   const [errors, setErrors] = useState({});
   const [errMsg, setErrMsg] = useState("");
   const [debugInfo, setDebugInfo] = useState(null);
+  const [successNotice, setSuccessNotice] = useState(null);
+
+  useEffect(() => {
+    if (!successNotice) return undefined;
+    const timer = window.setTimeout(() => setSuccessNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [successNotice]);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,7 +168,10 @@ const JobsPage = () => {
       setJobs((prev) => [created, ...prev]);
       setShowForm(false);
       setErrors({});
-      alert(`Job created!\nPublic apply link:\n${created.atsLink || "—"}`);
+      setSuccessNotice({
+        title: created.title,
+        link: created.atsLink || "",
+      });
       setNewJob({
         title: "",
         description: "",
@@ -359,6 +369,46 @@ const JobsPage = () => {
             <JobCard key={job.id} job={job} />
           ))}
         </div>
+      )}
+
+      {successNotice && (
+        <aside className="fixed bottom-6 right-6 w-80 max-w-[calc(100vw-3rem)] bg-white border border-green-200 shadow-xl rounded-xl p-4 space-y-3">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Job published</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Share this public apply link with candidates:
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSuccessNotice(null)}
+              className="text-gray-400 hover:text-gray-600"
+              aria-label="Dismiss notice"
+            >
+              ×
+            </button>
+          </div>
+          <div className="bg-gray-50 border border-gray-200 rounded-md p-2 text-xs text-gray-700 break-words">
+            {successNotice.link || "Public link will appear once publishing completes."}
+          </div>
+          {successNotice.link && (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(successNotice.link);
+                  setSuccessNotice((prev) => (prev ? { ...prev, copied: true } : prev));
+                } catch {
+                  /* ignore */
+                }
+              }}
+              className="w-full inline-flex justify-center items-center gap-2 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-md py-2 hover:bg-green-100 transition"
+            >
+              {successNotice.copied ? "Copied" : "Copy link"}
+            </button>
+          )}
+        </aside>
       )}
     </div>
   );

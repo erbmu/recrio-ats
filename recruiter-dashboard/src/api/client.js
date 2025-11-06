@@ -32,6 +32,24 @@ function buildUrl(path) {
   return `${API_ORIGIN}/api/${p}`;
 }
 
+let redirecting = false;
+const forceLogout = (message = "Your session has ended. Please sign in again.") => {
+  if (typeof window === "undefined") return;
+  if (redirecting) return;
+  redirecting = true;
+  try {
+    tokenStore.clear();
+  } catch {}
+  try {
+    window.alert(message);
+  } catch {}
+  try {
+    window.location.replace("/login");
+  } catch {
+    window.location.assign("/login");
+  }
+};
+
 export async function api(path, { method = "GET", body, headers } = {}) {
   const token = tokenStore.get();
   const isForm = typeof FormData !== "undefined" && body instanceof FormData;
@@ -42,16 +60,23 @@ export async function api(path, { method = "GET", body, headers } = {}) {
   }
   console.log(`[CLI][API] ${method} ${url} token=${token ? "present" : "missing"}`);
 
-  const res = await fetch(url, {
-    method,
-    headers: {
-      ...(isForm ? {} : { "Content-Type": "application/json" }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(headers || {}),
-    },
-    body: isForm ? body : body ? JSON.stringify(body) : undefined,
-    credentials: "omit",
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: {
+        ...(isForm ? {} : { "Content-Type": "application/json" }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(headers || {}),
+      },
+      body: isForm ? body : body ? JSON.stringify(body) : undefined,
+      credentials: "omit",
+    });
+  } catch (networkErr) {
+    console.error("[CLI][API] network error", networkErr);
+    forceLogout("Connection lost. Please sign in again.");
+    throw new Error("Network error");
+  }
 
   const text = await res.text();
   let data = null;
@@ -60,10 +85,16 @@ export async function api(path, { method = "GET", body, headers } = {}) {
   console.log(`[CLI][API] <- ${res.status} ${method} ${url}`, data || text);
 
   if (!res.ok) {
-    const msg = (data && (data.error || data.message)) || text || `HTTP ${res.status}`;
-    const err = new Error(msg);
+    const status = res.status;
+    if (status === 401 || status === 403) {
+      forceLogout("Your session has expired. Please sign in again.");
+    } else if (status >= 500) {
+      forceLogout("We hit a server issue. Please sign in again.");
+    }
+    const msg = (data && (data.error || data.message)) || text || `HTTP ${status}`;
+    const err = new Error(status >= 500 ? "Server error" : msg);
     // attach more debug
-    err.__debug = { status: res.status, url, body: data || text };
+    err.__debug = { status, url, body: data || text };
     throw err;
   }
   return data;
