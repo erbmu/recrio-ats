@@ -1,8 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../api/client";
-
-export default function JobCard({ job }) {
+export default function JobCard({ job, onDelete }) {
   const navigate = useNavigate();
 
   const meta = [
@@ -28,17 +26,8 @@ export default function JobCard({ job }) {
     }
   };
 
-  const onDelete = async () => {
-    const ok = window.confirm(
-      `Delete "${job.title}"?\n\nThis is PERMANENT. You will lose all candidate data in the dashboard (an archive is stored server-side).`
-    );
-    if (!ok) return;
-    try {
-      await api(`jobs/${job.id}`, { method: "DELETE" });
-      window.location.reload();
-    } catch (e) {
-      alert(e.message || "Failed to delete job");
-    }
+  const handleDelete = () => {
+    if (typeof onDelete === "function") onDelete(job);
   };
 
   return (
@@ -100,7 +89,7 @@ export default function JobCard({ job }) {
 
             {/* Delete job */}
             <button
-              onClick={onDelete}
+              onClick={handleDelete}
               type="button"
               className="inline-flex h-9 items-center rounded-md border border-red-300 px-3 text-sm text-red-700 hover:bg-red-50"
               title="Delete job (archives server-side)"

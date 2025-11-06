@@ -31,6 +31,9 @@ const JobsPage = () => {
   const [errMsg, setErrMsg] = useState("");
   const [debugInfo, setDebugInfo] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteStatus, setDeleteStatus] = useState("idle");
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     if (!successNotice) return undefined;
@@ -113,6 +116,36 @@ const JobsPage = () => {
     };
   }, []);
 
+  const setDeleteTargetSafe = (job) => {
+    if (!job) return;
+    setDeleteError("");
+    setDeleteStatus("idle");
+    setDeleteTarget(job);
+  };
+
+  const closeDeleteModal = () => {
+    if (deleteStatus === "loading") return;
+    setDeleteTarget(null);
+    setDeleteError("");
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget || deleteStatus === "loading") return;
+    const job = deleteTarget;
+    setDeleteStatus("loading");
+    setDeleteError("");
+    try {
+      await api(`jobs/${job.id}`, { method: "DELETE" });
+      setJobs((prev) => prev.filter((j) => j.id !== job.id));
+      setDeleteTarget(null);
+      setDeleteStatus("idle");
+      setSuccessNotice({ type: "deleted", title: job.title });
+    } catch (err) {
+      setDeleteStatus("idle");
+      setDeleteError(err.message || "Failed to delete job");
+    }
+  };
+
   const update = (e) => {
     const { name, value } = e.target;
     let v = value;
@@ -169,6 +202,7 @@ const JobsPage = () => {
       setShowForm(false);
       setErrors({});
       setSuccessNotice({
+        type: "created",
         title: created.title,
         link: created.atsLink || "",
       });
@@ -366,14 +400,84 @@ const JobsPage = () => {
       ) : (
         <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {jobs.map((job) => (
-            <JobCard key={job.id} job={job} />
+            <JobCard key={job.id} job={job} onDelete={setDeleteTargetSafe} />
           ))}
         </div>
       )}
 
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8 bg-black/30 backdrop-blur-[2px]"
+          onClick={closeDeleteModal}
+        >
+          <div
+            className="relative w-full max-w-md rounded-2xl border border-red-200 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={closeDeleteModal}
+              className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+              aria-label="Dismiss"
+              disabled={deleteStatus === "loading"}
+            >
+              ×
+            </button>
+            <div className="px-6 pt-6 pb-5 space-y-4">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-600 text-xl">
+                  !
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Delete this job posting?</p>
+                  <p className="text-xs text-gray-500">
+                    Remove{" "}
+                    <span className="font-semibold text-gray-900">
+                      {deleteTarget.title || "this job"}
+                    </span>{" "}
+                    from your listings. This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+              {deleteError && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {deleteError}
+                </div>
+              )}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={closeDeleteModal}
+                  className="flex-1 inline-flex justify-center rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={deleteStatus === "loading"}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={deleteStatus === "loading"}
+                  className="flex-1 inline-flex justify-center items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {deleteStatus === "loading" ? "Deleting..." : "Delete job"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {successNotice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8 bg-black/30 backdrop-blur-[2px]">
-          <div className="relative w-full max-w-md rounded-2xl border border-green-200 bg-white shadow-2xl">
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8 bg-black/30 backdrop-blur-[2px]"
+          onClick={() => setSuccessNotice(null)}
+        >
+          <div
+            className={`relative w-full max-w-md rounded-2xl border ${
+              successNotice.type === "deleted" ? "border-red-200" : "border-green-200"
+            } bg-white shadow-2xl`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
               onClick={() => setSuccessNotice(null)}
@@ -384,19 +488,31 @@ const JobsPage = () => {
             </button>
             <div className="px-6 pt-6 pb-5 space-y-4">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-green-100 text-green-700 text-xl">
-                  ✓
+                <span
+                  className={`inline-flex h-10 w-10 items-center justify-center rounded-full text-xl ${
+                    successNotice.type === "deleted"
+                      ? "bg-red-100 text-red-600"
+                      : "bg-green-100 text-green-700"
+                  }`}
+                >
+                  {successNotice.type === "deleted" ? "!" : "✓"}
                 </span>
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">Job created successfully</p>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {successNotice.type === "deleted" ? "Job deleted" : "Job created successfully"}
+                  </p>
                   <p className="text-xs text-gray-500">
-                    {successNotice.title || "New posting"} is live and ready for candidates.
+                    {successNotice.type === "deleted"
+                      ? `${successNotice.title || "The job"} has been removed from your listings.`
+                      : `${successNotice.title || "New posting"} is live and ready for candidates.`}
                   </p>
                 </div>
               </div>
-              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 break-words">
-                {successNotice.link || "Public link will appear once publishing completes."}
-              </div>
+              {successNotice.type !== "deleted" && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 break-words">
+                  {successNotice.link || "Public link will appear once publishing completes."}
+                </div>
+              )}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <button
                   type="button"
@@ -405,24 +521,26 @@ const JobsPage = () => {
                 >
                   Close
                 </button>
-                <button
-                  type="button"
-                  disabled={!successNotice.link}
-                  onClick={async () => {
-                    if (!successNotice.link) return;
-                    try {
-                      await navigator.clipboard.writeText(successNotice.link);
-                      setSuccessNotice((prev) =>
-                        prev ? { ...prev, copied: true } : prev
-                      );
-                    } catch {
-                      /* noop */
-                    }
-                  }}
-                  className="flex-1 inline-flex justify-center items-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700 transition disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {successNotice.copied ? "Link copied" : "Copy link"}
-                </button>
+                {successNotice.type !== "deleted" && (
+                  <button
+                    type="button"
+                    disabled={!successNotice.link}
+                    onClick={async () => {
+                      if (!successNotice.link) return;
+                      try {
+                        await navigator.clipboard.writeText(successNotice.link);
+                        setSuccessNotice((prev) =>
+                          prev ? { ...prev, copied: true } : prev
+                        );
+                      } catch {
+                        /* noop */
+                      }
+                    }}
+                    className="flex-1 inline-flex justify-center items-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700 transition disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {successNotice.copied ? "Link copied" : "Copy link"}
+                  </button>
+                )}
               </div>
             </div>
           </div>
