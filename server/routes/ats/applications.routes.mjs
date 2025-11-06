@@ -11,6 +11,7 @@ import {
   fetchSimulationAnalyses,
   fetchSimulationAnalysis,
   fetchSimulationResponsesAndViolations,
+  fetchIdentityCheck,
   computeOverallFromReport,
 } from "../../lib/supabaseAnalysis.mjs";
 
@@ -577,6 +578,7 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
     });
     const { responses: supResponses, violations: supViolations } =
       await fetchSimulationResponsesAndViolations(a.simulation_id);
+    const identityCheck = await fetchIdentityCheck(a.simulation_id);
     const analysis_report = supAnalysis?.analysis_report ?? null;
     const analysis_generated_at = supAnalysis?.analysis_generated_at ?? null;
     const analysis_overall_score = supAnalysis?.analysis_overall_score ?? computeOverallFromReport(analysis_report);
@@ -629,6 +631,10 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
       },
       simulation_responses: supResponses,
       simulation_violations: supViolations,
+      simulation_identity: {
+        selfie_url: identityCheck?.selfie_url ?? null,
+        id_url: identityCheck?.id_url ?? null,
+      },
       analysis_report,
       analysis_generated_at,
       analysis_overall_score: analysis_overall_score ?? null,

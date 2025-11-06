@@ -116,6 +116,9 @@ export default function ApplicantReportPage() {
     }));
   }, [app?.simulation_violations]);
 
+  const identity = app?.simulation_identity || {};
+  const hasIdentity = !!(identity.selfie_url || identity.id_url);
+
   const openFile = async (kind, filenameHint = "file") => {
     if (!app) return;
     const token = tokenStore.get();
@@ -314,6 +317,40 @@ export default function ApplicantReportPage() {
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {hasIdentity && (
+              <div className="mt-6">
+                <h3 className="text-sm font-semibold text-gray-800">Identity Verification</h3>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {identity.selfie_url && (
+                    <div>
+                      <div className="text-sm text-gray-600 mb-2">Selfie Capture</div>
+                      <div className="overflow-hidden rounded-lg border border-gray-200">
+                        <img
+                          src={identity.selfie_url}
+                          alt="Selfie capture"
+                          className="w-full h-48 object-cover bg-gray-100"
+                          loading="lazy"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {identity.id_url && (
+                    <div>
+                      <div className="text-sm text-gray-600 mb-2">Government ID</div>
+                      <div className="overflow-hidden rounded-lg border border-gray-200">
+                        <img
+                          src={identity.id_url}
+                          alt="ID capture"
+                          className="w-full h-48 object-cover bg-gray-100"
+                          loading="lazy"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

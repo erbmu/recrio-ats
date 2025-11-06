@@ -16,6 +16,7 @@ const SERVICE_KEY =
     "").trim();
 
 const REST_ENDPOINT = SUPABASE_REST_BASE ? `${SUPABASE_REST_BASE}/rest/v1` : "";
+const STORAGE_ENDPOINT = SUPABASE_REST_BASE ? `${SUPABASE_REST_BASE}/storage/v1` : "";
 
 let missingConfigWarned = false;
 let fetchErrorWarned = false;
@@ -186,6 +187,52 @@ export async function fetchSimulationAnalysis({ simulationId } = {}) {
   return null;
 }
 
+const encodeStoragePath = (path) =>
+  path
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+
+const signStoragePath = async (bucket, path, expiresIn = 3600) => {
+  if (!STORAGE_ENDPOINT || !SERVICE_KEY) return null;
+  if (!path) return null;
+  try {
+    const cleanPath = encodeStoragePath(path.replace(/^\/+/, ""));
+    const url = `${STORAGE_ENDPOINT}/object/sign/${bucket}/${cleanPath}`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ expiresIn }),
+    });
+    if (!resp.ok) {
+      if (!fetchErrorWarned) {
+        const text = await resp.text().catch(() => "");
+        fetchErrorWarned = true;
+        console.warn(
+          "[supabase] Failed to sign storage path:",
+          resp.status,
+          text
+        );
+      }
+      return null;
+    }
+    const data = await resp.json().catch(() => null);
+    const signed = data?.signedURL || data?.signedUrl;
+    if (!signed) return null;
+    return `${STORAGE_ENDPOINT}${signed.startsWith("/") ? "" : "/"}${signed}`;
+  } catch (err) {
+    if (!fetchErrorWarned) {
+      fetchErrorWarned = true;
+      console.warn("[supabase] Error signing storage path:", err?.message || err);
+    }
+    return null;
+  }
+};
+
 const RESPONSE_COLUMNS = [
   "content",
   "response",
@@ -280,6 +327,41 @@ export async function fetchSimulationResponsesAndViolations(simulationId) {
   }
 
   return { responses, violations };
+}
+
+export async function fetchIdentityCheck(simulationId) {
+  if (!hasConfig()) return { selfie_url: null, id_url: null };
+  if (simulationId == null) return { selfie_url: null, id_url: null };
+  const key = String(simulationId);
+
+  try {
+    const rows = await querySupabaseTable("simulation_identity_checks", {
+      select: "selfie_path,id_path",
+      filter: { external_simulation_id: buildEq(key) },
+      order: "id.desc",
+    });
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return { selfie_url: null, id_url: null };
+    }
+
+    const row = rows[0] || {};
+    const selfiePath = typeof row.selfie_path === "string" ? row.selfie_path.trim() : "";
+    const idPath = typeof row.id_path === "string" ? row.id_path.trim() : "";
+
+    const [selfie_url, id_url] = await Promise.all([
+      selfiePath ? signStoragePath("honor-lock", selfiePath) : Promise.resolve(null),
+      idPath ? signStoragePath("honor-lock", idPath) : Promise.resolve(null),
+    ]);
+
+    return { selfie_url, id_url };
+  } catch (err) {
+    if (!fetchErrorWarned) {
+      fetchErrorWarned = true;
+      console.warn("[supabase] Error fetching identity check:", err?.message || err);
+    }
+    return { selfie_url: null, id_url: null };
+  }
 }
 
 export { computeOverallFromReport };
