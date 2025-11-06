@@ -372,43 +372,61 @@ const JobsPage = () => {
       )}
 
       {successNotice && (
-        <aside className="fixed bottom-6 right-6 w-80 max-w-[calc(100vw-3rem)] bg-white border border-green-200 shadow-xl rounded-xl p-4 space-y-3">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-semibold text-gray-900">Job published</p>
-              <p className="text-xs text-gray-500 mt-1">
-                Share this public apply link with candidates:
-              </p>
-            </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8 bg-black/30 backdrop-blur-[2px]">
+          <div className="relative w-full max-w-md rounded-2xl border border-green-200 bg-white shadow-2xl">
             <button
               type="button"
               onClick={() => setSuccessNotice(null)}
-              className="text-gray-400 hover:text-gray-600"
-              aria-label="Dismiss notice"
+              className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+              aria-label="Dismiss"
             >
               ×
             </button>
+            <div className="px-6 pt-6 pb-5 space-y-4">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-green-100 text-green-700 text-xl">
+                  ✓
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Job created successfully</p>
+                  <p className="text-xs text-gray-500">
+                    {successNotice.title || "New posting"} is live and ready for candidates.
+                  </p>
+                </div>
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 break-words">
+                {successNotice.link || "Public link will appear once publishing completes."}
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSuccessNotice(null)}
+                  className="flex-1 inline-flex justify-center rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  disabled={!successNotice.link}
+                  onClick={async () => {
+                    if (!successNotice.link) return;
+                    try {
+                      await navigator.clipboard.writeText(successNotice.link);
+                      setSuccessNotice((prev) =>
+                        prev ? { ...prev, copied: true } : prev
+                      );
+                    } catch {
+                      /* noop */
+                    }
+                  }}
+                  className="flex-1 inline-flex justify-center items-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700 transition disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {successNotice.copied ? "Link copied" : "Copy link"}
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="bg-gray-50 border border-gray-200 rounded-md p-2 text-xs text-gray-700 break-words">
-            {successNotice.link || "Public link will appear once publishing completes."}
-          </div>
-          {successNotice.link && (
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(successNotice.link);
-                  setSuccessNotice((prev) => (prev ? { ...prev, copied: true } : prev));
-                } catch {
-                  /* ignore */
-                }
-              }}
-              className="w-full inline-flex justify-center items-center gap-2 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-md py-2 hover:bg-green-100 transition"
-            >
-              {successNotice.copied ? "Copied" : "Copy link"}
-            </button>
-          )}
-        </aside>
+        </div>
       )}
     </div>
   );
