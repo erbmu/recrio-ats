@@ -378,65 +378,7 @@ export default function ApplyPage() {
           </div>
         </header>
 
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-          <div className="space-y-8">
-            <section className="rounded-3xl border border-zinc-200 bg-white/90 p-8 shadow-sm backdrop-blur">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">About this role</h2>
-              <p className="mt-4 whitespace-pre-wrap text-[15px] leading-relaxed text-zinc-700">
-                {job.description || "—"}
-              </p>
-
-              {job.qualifications && (
-                <>
-                  <div className="mt-8 h-px w-full bg-zinc-100" />
-                  <h3 className="mt-6 text-sm font-semibold uppercase tracking-wide text-zinc-500">
-                    Qualifications
-                  </h3>
-                  {renderQualifications(job.qualifications)}
-                </>
-              )}
-            </section>
-
-            <section className="rounded-3xl border border-zinc-200 bg-white/90 p-8 shadow-sm backdrop-blur">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Company snapshot</h3>
-              <div className="mt-4 space-y-4 text-[15px] leading-relaxed text-zinc-700">
-                {companyName && (
-                  <p className="text-base font-medium text-zinc-900">{companyName}</p>
-                )}
-                <p className="whitespace-pre-wrap">
-                  {companyDescription || "We’re hiring talented people to join our team."}
-                </p>
-
-                <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                  {job.location && (
-                    <div className="rounded-2xl border border-zinc-100 bg-zinc-50/80 px-4 py-3">
-                      <dt className="text-xs uppercase tracking-wide text-zinc-500">Location</dt>
-                      <dd className="mt-1 text-zinc-700">{job.location}</dd>
-                    </div>
-                  )}
-                  {job.employment_type && (
-                    <div className="rounded-2xl border border-zinc-100 bg-zinc-50/80 px-4 py-3">
-                      <dt className="text-xs uppercase tracking-wide text-zinc-500">Employment</dt>
-                      <dd className="mt-1 text-zinc-700">{job.employment_type}</dd>
-                    </div>
-                  )}
-                  {job.work_type && (
-                    <div className="rounded-2xl border border-zinc-100 bg-zinc-50/80 px-4 py-3">
-                      <dt className="text-xs uppercase tracking-wide text-zinc-500">Work type</dt>
-                      <dd className="mt-1 text-zinc-700">{job.work_type}</dd>
-                    </div>
-                  )}
-                  {job.salary && (
-                    <div className="rounded-2xl border border-zinc-100 bg-zinc-50/80 px-4 py-3">
-                      <dt className="text-xs uppercase tracking-wide text-zinc-500">Compensation</dt>
-                      <dd className="mt-1 text-zinc-700">{job.salary}</dd>
-                    </div>
-                  )}
-                </dl>
-              </div>
-            </section>
-          </div>
-
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
           <form
             onSubmit={onSubmit}
             className="relative overflow-hidden rounded-3xl border border-zinc-200 bg-white/95 shadow-xl backdrop-blur"
@@ -683,6 +625,64 @@ export default function ApplyPage() {
               </section>
             </div>
           </form>
+
+          <div className="space-y-8">
+            <section className="rounded-3xl border border-zinc-200 bg-white/90 p-8 shadow-sm backdrop-blur">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">About this role</h2>
+              <p className="mt-4 whitespace-pre-wrap text-[15px] leading-relaxed text-zinc-700">
+                {job.description || "—"}
+              </p>
+
+              {job.qualifications && (
+                <>
+                  <div className="mt-8 h-px w-full bg-zinc-100" />
+                  <h3 className="mt-6 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+                    Qualifications
+                  </h3>
+                  {renderQualifications(job.qualifications)}
+                </>
+              )}
+            </section>
+
+            <section className="rounded-3xl border border-zinc-200 bg-white/90 p-8 shadow-sm backdrop-blur">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Company snapshot</h3>
+              <div className="mt-4 space-y-4 text-[15px] leading-relaxed text-zinc-700">
+                {companyName && (
+                  <p className="text-base font-medium text-zinc-900">{companyName}</p>
+                )}
+                <p className="whitespace-pre-wrap">
+                  {companyDescription || "We’re hiring talented people to join our team."}
+                </p>
+
+                <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                  {job.location && (
+                    <div className="rounded-2xl border border-zinc-100 bg-zinc-50/80 px-4 py-3">
+                      <dt className="text-xs uppercase tracking-wide text-zinc-500">Location</dt>
+                      <dd className="mt-1 text-zinc-700">{job.location}</dd>
+                    </div>
+                  )}
+                  {job.employment_type && (
+                    <div className="rounded-2xl border border-zinc-100 bg-zinc-50/80 px-4 py-3">
+                      <dt className="text-xs uppercase tracking-wide	text-zinc-500">Employment</dt>
+                      <dd className="mt-1 text-zinc-700">{job.employment_type}</dd>
+                    </div>
+                  )}
+                  {job.work_type && (
+                    <div className="rounded-2xl border border-zinc-100 bg-zinc-50/80 px-4 py-3">
+                      <dt className="text-xs uppercase tracking-wide text-zinc-500">Work type</dt>
+                      <dd className="mt-1 text-zinc-700">{job.work_type}</dd>
+                    </div>
+                  )}
+                  {job.salary && (
+                    <div className="rounded-2xl border border-zinc-100 bg-zinc-50/80 px-4 py-3">
+                      <dt className="text-xs uppercase tracking-wide text-zinc-500">Compensation</dt>
+                      <dd className="mt-1 text-zinc-700">{job.salary}</dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            </section>
+          </div>
         </div>
 
         <div className="mt-10 rounded-2xl border border-amber-100 bg-amber-50/80 px-4 py-3 text-xs text-amber-700 shadow-sm">
