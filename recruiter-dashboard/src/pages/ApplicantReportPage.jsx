@@ -297,63 +297,63 @@ export default function ApplicantReportPage() {
                 AI analysis not yet available. Check back once the simulation has finished processing.
               </p>
             )}
-
-            {violations.length > 0 && (
-              <div className="mt-6">
-                <h3 className="text-sm font-semibold text-gray-800">Simulation Violations</h3>
-                <ul className="mt-3 space-y-3">
-                  {violations.map((v) => (
-                    <li key={v.id} className="rounded-lg border border-red-100 bg-red-50 px-4 py-3">
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="text-sm font-medium text-red-600">
-                          {labelFromKey(v.type || "Violation")}
-                        </span>
-                        {v.created_at && (
-                          <time className="text-xs text-red-500">
-                            {new Date(v.created_at).toLocaleString()}
-                          </time>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {hasIdentity && (
-              <div className="mt-6">
-                <h3 className="text-sm font-semibold text-gray-800">Identity Verification</h3>
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {identity.selfie_url && (
-                    <div>
-                      <div className="text-sm text-gray-600 mb-2">Selfie Capture</div>
-                      <div className="overflow-hidden rounded-lg border border-gray-200">
-                        <img
-                          src={identity.selfie_url}
-                          alt="Selfie capture"
-                          className="w-full h-48 object-cover bg-gray-100"
-                          loading="lazy"
-                        />
-                      </div>
-                    </div>
-                  )}
-                  {identity.id_url && (
-                    <div>
-                      <div className="text-sm text-gray-600 mb-2">Government ID</div>
-                      <div className="overflow-hidden rounded-lg border border-gray-200">
-                        <img
-                          src={identity.id_url}
-                          alt="ID capture"
-                          className="w-full h-48 object-cover bg-gray-100"
-                          loading="lazy"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
+
+          {violations.length > 0 && (
+            <div className="bg-white border border-red-100 rounded-lg p-6 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-800">Simulation Violations</h3>
+              <ul className="mt-3 space-y-3">
+                {violations.map((v) => (
+                  <li key={v.id} className="rounded-lg border border-red-100 bg-red-50 px-4 py-3">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-sm font-medium text-red-600">
+                        {labelFromKey(v.type || "Violation")}
+                      </span>
+                      {v.created_at && (
+                        <time className="text-xs text-red-500">
+                          {new Date(v.created_at).toLocaleString()}
+                        </time>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {hasIdentity && (
+            <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-800">Identity Verification</h3>
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {identity.selfie_url && (
+                  <div>
+                    <div className="text-sm text-gray-600 mb-2">Selfie Capture</div>
+                    <div className="overflow-hidden rounded-lg border border-gray-200">
+                      <img
+                        src={identity.selfie_url}
+                        alt="Selfie capture"
+                        className="w-full h-48 object-cover bg-gray-100"
+                        loading="lazy"
+                      />
+                    </div>
+                  </div>
+                )}
+                {identity.id_url && (
+                  <div>
+                    <div className="text-sm text-gray-600 mb-2">Government ID</div>
+                    <div className="overflow-hidden rounded-lg border border-gray-200">
+                      <img
+                        src={identity.id_url}
+                        alt="ID capture"
+                        className="w-full h-48 object-cover bg-gray-100"
+                        loading="lazy"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {(app.files?.career_card || app.files?.resume) && (
             <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm mt-10">
