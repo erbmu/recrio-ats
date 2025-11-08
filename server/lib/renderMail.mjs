@@ -7,7 +7,7 @@ const DEFAULT_FROM =
   process.env.SIM_INVITE_FROM ||
   process.env.RENDER_MAIL_FROM ||
   "Recrio Hiring <notifications@recrio-mail.com>";
-const SUPPORT_EMAIL = process.env.SIM_SUPPORT_EMAIL || "support@recr.io";
+const SUPPORT_EMAIL = process.env.SIM_SUPPORT_EMAIL || "support@recrio-ai.com";
 
 const hasRenderMail = Boolean(RENDER_API_KEY);
 const hasResendMail = Boolean(RESEND_API_KEY);
@@ -15,26 +15,37 @@ const hasMailProvider = hasRenderMail || hasResendMail;
 
 const buildBody = ({ candidateName, candidateEmail, jobTitle, companyName, simulationUrl }) => {
   const name = candidateName?.trim() || "there";
-  const role = jobTitle?.trim() || "the open role";
   const company = companyName?.trim() || "our team";
 
-  const subject = `Recrio simulation for ${company} (${role})`;
+  const subject = `Your Recrio Simulation Is Ready for ${company}`;
 
   const text = `Hi ${name},
 
-Thanks for your interest in ${company}! Please complete your Recrio simulation so we can keep things moving.
+Thank you for your interest in ${company} and for taking the next step with Recrio Simulations.
+We’re excited to learn more about you through our short, role-specific simulation.
 
-Simulation link: ${simulationUrl}
+Simulation Link:
+${simulationUrl}
 
-If you run into any issues, reply to this email or contact ${SUPPORT_EMAIL}.
+Please complete the simulation at your earliest convenience so we can move your application forward. Once submitted, our team will review your responses and get back to you shortly.
 
-— Recrio`;
+If you have any questions or encounter any issues, simply reply to this email or contact us at ${SUPPORT_EMAIL} — we’re happy to help.
 
-  const html = `<p>Hi ${name},</p>
-<p>Thanks for your interest in ${company}! Please complete your Recrio simulation so we can keep things moving.</p>
-<p><strong>Simulation link:</strong> <a href="${simulationUrl}">${simulationUrl}</a></p>
-<p>If you run into any issues, reply to this email or contact <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>.</p>
-<p>— Recrio</p>`;
+Best of luck,
+Team Recrio`;
+
+  const html = `
+  <p>Hi ${name},</p>
+  <p>Thank you for your interest in ${company} and for taking the next step with Recrio Simulations. We’re excited to learn more about you through our short, role-specific simulation.</p>
+  <p><strong>Simulation Link:</strong></p>
+  <p>
+    <a href="${simulationUrl}" style="display:inline-flex;padding:12px 20px;border-radius:999px;background:#111;color:#fff;text-decoration:none;font-weight:600;">
+      Start Your Simulation
+    </a>
+  </p>
+  <p>Please complete the simulation at your earliest convenience so we can move your application forward. Once submitted, our team will review your responses and get back to you shortly.</p>
+  <p>If you have any questions or encounter any issues, simply reply to this email or contact us at <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a> — we’re happy to help.</p>
+  <p>Best of luck,<br/>Team Recrio</p>`;
 
   return { subject, text, html, to: candidateEmail };
 };
