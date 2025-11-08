@@ -33,21 +33,109 @@ function buildUrl(path) {
 }
 
 let redirecting = false;
-const forceLogout = (message = "Your session has ended. Please sign in again.") => {
-  if (typeof window === "undefined") return;
+let logoutPromptVisible = false;
+
+const navigateToLogin = () => {
   if (redirecting) return;
   redirecting = true;
-  try {
-    tokenStore.clear();
-  } catch {}
-  try {
-    window.alert(message);
-  } catch {}
   try {
     window.location.replace("/login");
   } catch {
     window.location.assign("/login");
   }
+};
+
+const showLogoutPrompt = (message, onConfirm) => {
+  if (typeof document === "undefined") {
+    onConfirm();
+    return;
+  }
+  if (logoutPromptVisible) return;
+  logoutPromptVisible = true;
+
+  const overlay = document.createElement("div");
+  overlay.className =
+    "fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 px-4 py-8 backdrop-blur-[2px]";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+
+  overlay.innerHTML = `
+    <div class="relative w-full max-w-md rounded-2xl border border-red-200 bg-white shadow-2xl">
+      <button type="button" data-close class="absolute right-3 top-3 text-gray-400 hover:text-gray-600" aria-label="Dismiss">
+        ×
+      </button>
+      <div class="px-6 pt-6 pb-5 space-y-4">
+        <div class="flex items-center gap-3">
+          <span class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-600 text-xl">
+            !
+          </span>
+          <div>
+            <p class="text-sm font-semibold text-gray-900">Connection lost</p>
+            <p class="text-xs text-gray-500" data-message></p>
+          </div>
+        </div>
+        <p class="text-sm text-gray-600 leading-relaxed">
+          You'll need to sign back in to keep working securely.
+        </p>
+        <button type="button" data-primary class="w-full inline-flex justify-center rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-gray-900 transition">
+          Sign in again
+        </button>
+      </div>
+    </div>
+  `;
+
+  const messageNode = overlay.querySelector("[data-message]");
+  if (messageNode) messageNode.textContent = message;
+
+  const cleanup = () => {
+    if (!logoutPromptVisible) return;
+    logoutPromptVisible = false;
+    try {
+      document.body.removeChild(overlay);
+    } catch {}
+    window.removeEventListener("keydown", handleKey);
+    if (autoRedirectTimer) window.clearTimeout(autoRedirectTimer);
+  };
+
+  const confirmAndNavigate = () => {
+    if (redirecting) {
+      cleanup();
+      return;
+    }
+    cleanup();
+    onConfirm();
+  };
+
+  const handleKey = (event) => {
+    if (event.key === "Enter" || event.key === "Escape") {
+      event.preventDefault();
+      confirmAndNavigate();
+    }
+  };
+
+  const autoRedirectTimer = window.setTimeout(confirmAndNavigate, 8000);
+
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) confirmAndNavigate();
+  });
+
+  const closeBtn = overlay.querySelector("[data-close]");
+  if (closeBtn) closeBtn.addEventListener("click", confirmAndNavigate);
+
+  const primaryBtn = overlay.querySelector("[data-primary]");
+  if (primaryBtn) primaryBtn.addEventListener("click", confirmAndNavigate);
+
+  window.addEventListener("keydown", handleKey);
+  document.body.appendChild(overlay);
+};
+
+const forceLogout = (message = "Your session has ended. Please sign in again.") => {
+  if (typeof window === "undefined") return;
+  if (redirecting) return;
+  try {
+    tokenStore.clear();
+  } catch {}
+  showLogoutPrompt(message, navigateToLogin);
 };
 
 export async function api(path, { method = "GET", body, headers } = {}) {
