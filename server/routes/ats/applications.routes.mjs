@@ -14,6 +14,7 @@ import {
   fetchIdentityCheck,
   computeOverallFromReport,
 } from "../../lib/supabaseAnalysis.mjs";
+import { sendSimulationInviteEmail } from "../../lib/renderMail.mjs";
 
 /* ------------------------------------------------------------------------- */
 /* Simulation Edge Function config                                            */
@@ -322,7 +323,8 @@ r.post(
             "j.id as job_id",
             "j.title as job_title",
             "j.description as job_description",
-            "o.company_description as company_description"
+            "o.company_description as company_description",
+            "o.name as company_name"
           )
           .first();
 
@@ -355,6 +357,18 @@ r.post(
             console.warn("[sim trigger] unable to parse public token from URL:", resp.url);
           }
           await db("simulations").where({ application_id: applicationId }).update(update);
+
+          try {
+            await sendSimulationInviteEmail({
+              candidateName: data.candidate_name,
+              candidateEmail: email,
+              jobTitle: meta?.job_title || job.title,
+              companyName: meta?.company_name || job.title || "Recrio",
+              simulationUrl: resp.url,
+            });
+          } catch (mailErr) {
+            console.error("[sim trigger] invite email failed", mailErr?.message || mailErr);
+          }
         } else {
           // Leave as 'pending' - you can inspect logs if something odd came back
           await db("simulations")

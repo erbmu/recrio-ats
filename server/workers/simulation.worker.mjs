@@ -13,6 +13,7 @@ function sign(payload) {
 }
 
 export async function makeSimulationForApplication(applicationId) {
+  console.info("[simulation.worker] processing application", { applicationId });
   // 1) load what you need to build prompts (job + org)
   const row = await db("applications as ap")
     .join("jobs as j", "j.id", "ap.job_id")

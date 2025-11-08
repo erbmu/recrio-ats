@@ -1,7 +1,9 @@
-import { db } from "../../server/db.mjs";
+import { db } from "../../db.mjs";
+import { sendSimulationInviteEmail } from "../../lib/renderMail.mjs";
 // If you’re on Node 18+, global fetch exists; otherwise: import fetch from "node-fetch";
 
 export async function makeSimulationForApplication(applicationId) {
+  console.info("[sim.service] starting simulation generation", { applicationId });
   const ctx = await db("applications as ap")
     .join("jobs as j", "j.id", "ap.job_id")
     .join("organizations as o", "o.id", "j.org_id")
@@ -47,5 +49,26 @@ export async function makeSimulationForApplication(applicationId) {
   const json = await resp.json();
   if (!json?.url) throw new Error("sim_api_no_url");
 
-  return { url: json.url };
+  const url = json.url;
+
+  if (ctx.candidate_email) {
+    try {
+      await sendSimulationInviteEmail({
+        candidateName: ctx.candidate_name,
+        candidateEmail: ctx.candidate_email,
+        jobTitle: ctx.job_title,
+        companyName: ctx.company_description,
+        simulationUrl: url,
+      });
+    } catch (err) {
+      console.error("[sim.service] failed to send simulation invite", {
+        applicationId,
+        error: err?.message || err,
+      });
+    }
+  } else {
+    console.warn("[sim.service] missing candidate email, skipping invite send", { applicationId });
+  }
+
+  return { url };
 }

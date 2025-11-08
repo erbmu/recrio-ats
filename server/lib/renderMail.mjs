@@ -42,6 +42,12 @@ export async function sendSimulationInviteEmail(payload) {
   }
 
   const { subject, text, html, to } = buildBody(payload);
+  console.info("[renderMail] Attempting simulation invite send", {
+    to,
+    jobTitle: payload.jobTitle,
+    companyName: payload.companyName,
+  });
+
   const body = {
     from: DEFAULT_FROM,
     to,
@@ -50,17 +56,28 @@ export async function sendSimulationInviteEmail(payload) {
     html,
   };
 
-  const resp = await fetch(RENDER_MAIL_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${RENDER_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  let resp;
+  try {
+    resp = await fetch(RENDER_MAIL_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${RENDER_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    console.error("[renderMail] network error sending invite", { to, error: err?.message || err });
+    throw err;
+  }
 
   if (!resp.ok) {
     const message = await resp.text();
+    console.error("[renderMail] invite rejected by Render", {
+      to,
+      status: resp.status,
+      message,
+    });
     throw new Error(`Render mail failed (${resp.status}): ${message}`);
   }
 
@@ -70,6 +87,11 @@ export async function sendSimulationInviteEmail(payload) {
   } catch {
     json = { ok: true };
   }
+  console.info("[renderMail] invite accepted by Render", {
+    to,
+    status: resp.status,
+    id: json?.id || null,
+  });
   return json;
 }
 
