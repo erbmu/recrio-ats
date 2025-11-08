@@ -1,6 +1,7 @@
 // simulation.worker.mjs (or wherever makeSimulationForApplication lives)
 import crypto from "crypto";
 import { db } from "./db.mjs";
+import { sendSimulationInviteEmail } from "../lib/renderMail.mjs";
 
 const SIM_PUBLIC_BASE = process.env.SIM_PUBLIC_BASE || "http://localhost:5173";
 const SIM_TOKEN_SECRET = process.env.SIM_TOKEN_SECRET || "2TIODI8er8DejevRGe52F29Xj5vMDRc_ggO3ta-N1aAVA5TBxCT2b-7Bq3rB5dwr";
@@ -62,6 +63,24 @@ export async function makeSimulationForApplication(applicationId) {
       last_accessed_at: null,
       updated_at: db.fn.now(),
     });
+
+  if (row.candidate_email) {
+    try {
+      await sendSimulationInviteEmail({
+        candidateName: row.candidate_name,
+        candidateEmail: row.candidate_email,
+        jobTitle: row.job_title,
+        companyName: row.company_description,
+        simulationUrl: url,
+      });
+    } catch (err) {
+      console.error("[simulation.worker] failed to send invite email", err);
+    }
+  } else {
+    console.warn("[simulation.worker] Missing candidate email, skipping invite.", {
+      applicationId: row.application_id,
+    });
+  }
 
   return url;
 }

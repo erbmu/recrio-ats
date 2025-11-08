@@ -52,6 +52,39 @@ export default function ApplicantReportPage() {
   const analysisGeneratedAt = app?.analysis_generated_at || null;
   const analysisOverall =
     app?.analysis_overall_score ?? analysisReport?.overallStartupReadinessIndex ?? null;
+  const overallScore = toDisplayScore(analysisOverall);
+
+  const recommendation = React.useMemo(() => {
+    if (overallScore == null) return null;
+    if (overallScore >= 80) {
+      return {
+        title: "Move forward confidently",
+        body: "This simulation score indicates a very strong match. Keep the momentum and advance the candidate.",
+        icon: "↑",
+        border: "border-emerald-200",
+        iconBg: "bg-emerald-600 text-white",
+        badgeBg: "bg-emerald-50 text-emerald-700",
+      };
+    }
+    if (overallScore >= 60) {
+      return {
+        title: "Worth continued consideration",
+        body: "The candidate meets most success signals. Proceed while validating the areas flagged in the report.",
+        icon: "↗",
+        border: "border-amber-200",
+        iconBg: "bg-amber-500 text-white",
+        badgeBg: "bg-amber-50 text-amber-700",
+      };
+    }
+    return {
+      title: "Hold before advancing",
+      body: "Key indicators fell below the recommended range. Revisit the profile before committing next steps.",
+      icon: "!",
+      border: "border-rose-200",
+      iconBg: "bg-rose-500 text-white",
+      badgeBg: "bg-rose-50 text-rose-700",
+    };
+  }, [overallScore]);
 
   const analysisText = React.useMemo(() => {
     if (!analysisReport || typeof analysisReport !== "object") return "";
@@ -192,6 +225,27 @@ export default function ApplicantReportPage() {
         </div>
       ) : (
         <>
+          {recommendation && (
+            <div className={`mb-6 rounded-2xl border ${recommendation.border} bg-white shadow-sm`}>
+              <div className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <span className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl text-xl ${recommendation.iconBg}`}>
+                    {recommendation.icon}
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{recommendation.title}</p>
+                    <p className="mt-1 text-sm text-gray-600 leading-relaxed">{recommendation.body}</p>
+                  </div>
+                </div>
+                <div className={`inline-flex items-baseline gap-2 rounded-xl px-4 py-2 text-sm font-medium ${recommendation.badgeBg}`}>
+                  <span>Overall score</span>
+                  <span className="text-2xl font-semibold">{overallScore ?? "—"}</span>
+                  <span className="text-xs font-normal">/100</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white border border-gray-200 rounded-lg p-6 mb-10 shadow-sm">
             <h2 className="text-lg font-semibold text-gray-800 mb-4">Candidate Details</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
@@ -265,7 +319,7 @@ export default function ApplicantReportPage() {
                 <div className="mt-6">
                   <div className="text-sm text-gray-500">Overall readiness</div>
                   <div className="text-4xl font-semibold text-gray-900 mt-1">
-                    {toDisplayScore(analysisOverall) ?? "—"}
+                    {overallScore ?? "—"}
                     <span className="text-lg text-gray-400 ml-2">/100</span>
                   </div>
                 </div>

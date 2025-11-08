@@ -7,24 +7,31 @@ const TableCell = ({ children, className = "" }) => (
   <td className={`px-4 py-3 text-sm text-gray-800 ${className}`}>{children}</td>
 );
 
-// Prefer numeric ai_score (0..100). Fallback to ai_scores.* for display.
-const formatScore = (row) => {
-  const prefer = row?.analysis_overall_score;
-  if (prefer != null && Number.isFinite(Number(prefer))) {
-    const n = Number(prefer);
-    const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
-    return `${pct}%`;
+const toPercentScore = (value) => {
+  if (value == null) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return n <= 1 ? Math.round(n * 100) : Math.round(n);
+};
+
+const getScoreValue = (row) => {
+  const sources = [
+    row?.analysis_overall_score,
+    row?.ai_score,
+    row?.ai_scores?.overall ?? row?.ai_scores?.score,
+  ];
+  for (const val of sources) {
+    const pct = toPercentScore(val);
+    if (pct != null) return pct;
   }
-  if (row?.ai_score != null && Number.isFinite(Number(row.ai_score))) {
-    return `${Math.round(Number(row.ai_score))}%`;
-  }
-  const s = row?.ai_scores;
-  if (!s) return "—";
-  const v = s.overall ?? s.score ?? null;
-  const n = typeof v === "number" ? v : Number(v);
-  if (!Number.isFinite(n)) return "—";
-  const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
-  return `${pct}%`;
+  return null;
+};
+
+const scoreBadgeClasses = (score) => {
+  if (score == null) return "bg-gray-100 text-gray-500 border border-gray-200";
+  if (score >= 80) return "bg-green-50 text-green-700 border border-green-200";
+  if (score >= 60) return "bg-amber-50 text-amber-700 border border-amber-200";
+  return "bg-rose-50 text-rose-700 border border-rose-200";
 };
 
 export default function JobDetailPage() {
@@ -125,21 +132,32 @@ export default function JobDetailPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {apps.map((a, idx) => (
-                <tr key={a.id} className="hover:bg-gray-50">
-                  <TableCell className="w-24">{idx + 1}</TableCell>
-                  <TableCell>{a.candidate_name || "Applicant"}</TableCell>
-                  <TableCell className="w-40">{formatScore(a)}</TableCell>
-                  <TableCell className="w-40">
-                    <button
-                      onClick={() => navigate(`/dashboard/job/${id}/applicant/${a.id}`)}
-                      className="text-blue-600 hover:underline"
-                    >
-                      View Report
-                    </button>
-                  </TableCell>
-                </tr>
-              ))}
+              {apps.map((a, idx) => {
+                const scoreValue = getScoreValue(a);
+                return (
+                  <tr key={a.id} className="hover:bg-gray-50">
+                    <TableCell className="w-24">{idx + 1}</TableCell>
+                    <TableCell>{a.candidate_name || "Applicant"}</TableCell>
+                    <TableCell className="w-40">
+                      <span
+                        className={`inline-flex min-w-[4.5rem] justify-center rounded-full px-3 py-1 text-sm font-medium ${scoreBadgeClasses(
+                          scoreValue
+                        )}`}
+                      >
+                        {scoreValue != null ? `${scoreValue}%` : "Pending"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="w-40">
+                      <button
+                        onClick={() => navigate(`/dashboard/job/${id}/applicant/${a.id}`)}
+                        className="text-blue-600 hover:underline"
+                      >
+                        View Report
+                      </button>
+                    </TableCell>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
