@@ -123,6 +123,25 @@ const JobsPage = () => {
     setDeleteTarget(job);
   };
 
+  const handleCopyLink = async (job) => {
+    if (!job?.atsLink) return;
+    try {
+      await navigator.clipboard.writeText(job.atsLink);
+      setSuccessNotice({
+        type: "copied",
+        title: job.title,
+        link: job.atsLink,
+      });
+    } catch {
+      setSuccessNotice({
+        type: "copied",
+        title: job.title,
+        link: job.atsLink,
+        copyFailed: true,
+      });
+    }
+  };
+
   const closeDeleteModal = () => {
     if (deleteStatus === "loading") return;
     setDeleteTarget(null);
@@ -400,7 +419,7 @@ const JobsPage = () => {
       ) : (
         <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {jobs.map((job) => (
-            <JobCard key={job.id} job={job} onDelete={setDeleteTargetSafe} />
+            <JobCard key={job.id} job={job} onDelete={setDeleteTargetSafe} onCopy={handleCopyLink} />
           ))}
         </div>
       )}
@@ -468,14 +487,47 @@ const JobsPage = () => {
       )}
 
       {successNotice && (
+        (() => {
+          const type = successNotice.type || "created";
+          const themes = {
+            created: {
+              border: "border-green-200",
+              iconBg: "bg-green-100 text-green-700",
+              icon: "✓",
+              headline: "Job created successfully",
+              subtext: `${successNotice.title || "New posting"} is live and ready for candidates.`,
+              showLinkBlock: true,
+              showCopyButton: true,
+            },
+            deleted: {
+              border: "border-red-200",
+              iconBg: "bg-red-100 text-red-600",
+              icon: "!",
+              headline: "Job deleted",
+              subtext: `${successNotice.title || "The job"} has been removed from your listings.`,
+              showLinkBlock: false,
+              showCopyButton: false,
+            },
+            copied: {
+              border: "border-blue-200",
+              iconBg: "bg-blue-100 text-blue-600",
+              icon: "⇢",
+              headline: successNotice.copyFailed ? "Link ready to share" : "Link copied",
+              subtext: successNotice.copyFailed
+                ? "Clipboard access was blocked. Use the link below to copy manually."
+                : `${successNotice.title || "This job"} link is ready to share.`,
+              showLinkBlock: true,
+              showCopyButton: false,
+            },
+          };
+          const theme = themes[type] || themes.created;
+          return (
         <div
           className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8 bg-black/30 backdrop-blur-[2px]"
           onClick={() => setSuccessNotice(null)}
         >
           <div
-            className={`relative w-full max-w-md rounded-2xl border ${
-              successNotice.type === "deleted" ? "border-red-200" : "border-green-200"
-            } bg-white shadow-2xl`}
+            className={`relative w-full max-w-md rounded-2xl border ${theme.border} bg-white shadow-2xl`}
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -489,26 +541,16 @@ const JobsPage = () => {
             <div className="px-6 pt-6 pb-5 space-y-4">
               <div className="flex items-center gap-3">
                 <span
-                  className={`inline-flex h-10 w-10 items-center justify-center rounded-full text-xl ${
-                    successNotice.type === "deleted"
-                      ? "bg-red-100 text-red-600"
-                      : "bg-green-100 text-green-700"
-                  }`}
+                  className={`inline-flex h-10 w-10 items-center justify-center rounded-full text-xl ${theme.iconBg}`}
                 >
-                  {successNotice.type === "deleted" ? "!" : "✓"}
+                  {theme.icon}
                 </span>
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {successNotice.type === "deleted" ? "Job deleted" : "Job created successfully"}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {successNotice.type === "deleted"
-                      ? `${successNotice.title || "The job"} has been removed from your listings.`
-                      : `${successNotice.title || "New posting"} is live and ready for candidates.`}
-                  </p>
+                  <p className="text-sm font-semibold text-gray-900">{theme.headline}</p>
+                  <p className="text-xs text-gray-500">{theme.subtext}</p>
                 </div>
               </div>
-              {successNotice.type !== "deleted" && (
+              {theme.showLinkBlock && (
                 <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 break-words">
                   {successNotice.link || "Public link will appear once publishing completes."}
                 </div>
@@ -521,7 +563,7 @@ const JobsPage = () => {
                 >
                   Close
                 </button>
-                {successNotice.type !== "deleted" && (
+                {theme.showCopyButton && (
                   <button
                     type="button"
                     disabled={!successNotice.link}
@@ -545,6 +587,8 @@ const JobsPage = () => {
             </div>
           </div>
         </div>
+          );
+        })()
       )}
     </div>
   );

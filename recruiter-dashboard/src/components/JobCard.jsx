@@ -1,6 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-export default function JobCard({ job, onDelete }) {
+export default function JobCard({ job, onDelete, onCopy }) {
   const navigate = useNavigate();
 
   const meta = [
@@ -16,14 +16,8 @@ export default function JobCard({ job, onDelete }) {
     navigate(`/dashboard/job/${job.id}`);
   };
 
-  const copy = async () => {
-    if (!job.atsLink) return;
-    try {
-      await navigator.clipboard.writeText(job.atsLink);
-      alert("Copied!");
-    } catch {
-      alert(job.atsLink);
-    }
+  const copy = () => {
+    if (typeof onCopy === "function") onCopy(job);
   };
 
   const handleDelete = () => {
