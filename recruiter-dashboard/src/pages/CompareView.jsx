@@ -1,5 +1,4 @@
 import React from "react";
-import Layout from "../components/Layout";
 import { api } from "../api/client";
 
 export default function CompareView() {
@@ -84,9 +83,10 @@ export default function CompareView() {
 
   const disableOption = (id, other) => other && other === id;
 
+  const emptyState = !loadingJobs && jobs.length === 0;
+
   return (
-    <Layout>
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6">
         <div className="rounded-2xl bg-white border border-gray-200 p-6 shadow-sm">
           <h1 className="text-2xl font-semibold text-gray-900">Compare Candidates</h1>
           <p className="mt-2 text-sm text-gray-600 leading-relaxed">
@@ -94,6 +94,12 @@ export default function CompareView() {
           </p>
         </div>
 
+        {emptyState ? (
+          <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center text-gray-600">
+            You don’t have any jobs yet. Create a posting to start comparing candidates.
+          </div>
+        ) : (
+          <>
         <div className="grid gap-6 md:grid-cols-3">
           <div className="md:col-span-1">
             <label className="block text-sm font-medium text-gray-700 mb-2">Select Job</label>
@@ -182,6 +188,9 @@ export default function CompareView() {
           )}
         </div>
 
+          </>
+        )}
+
         {status.result && (
           <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-4">
             <div className="flex flex-col gap-2">
@@ -202,7 +211,6 @@ export default function CompareView() {
             </div>
           </div>
         )}
-      </div>
-    </Layout>
+    </div>
   );
 }

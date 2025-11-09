@@ -12,9 +12,9 @@ const router = Router();
 router.get("/jobs", requireAuth(), async (req, res, next) => {
   try {
     const jobs = await db("jobs")
-      .where({ org_id: req.auth.orgId, is_published: true })
+      .where({ org_id: req.auth.orgId })
       .orderBy("created_at", "desc")
-      .select("id", "title");
+      .select("id", "title", "is_published");
     return res.json(jobs);
   } catch (err) {
     return next(err);
