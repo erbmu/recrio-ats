@@ -730,7 +730,7 @@ Provide a comprehensive scoring and feedback.`;
         ],
       },
     ],
-    tool_choice: {
+    tool_config: {
       function_call: { name: "score_career_card" },
     },
   };
