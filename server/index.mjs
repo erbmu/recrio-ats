@@ -9,6 +9,7 @@ import authRoutes from "./routes/auth.mjs";
 import adminRoutes from "./routes/admin.mjs";
 import simPublicRoutes from "./routes/sim.public.routes.mjs";
 import simRoutes from "./routes/sim.routes.mjs";
+import careerCardReportsRoutes from "./routes/careerCardReports.routes.mjs";
 
 // ATS APIs
 import atsJobsRoutes from "./routes/ats/jobs.routes.mjs";
@@ -74,6 +75,7 @@ app.get("/api/ping", (_req, res) => res.json({ ok: true, where: "/api/ping" }));
 /* ---- IMPORTANT: Specific ATS routes FIRST ---- */
 app.use("/api/jobs", atsJobsRoutes);
 app.use("/api/applications", atsApplicationsRoutes);
+app.use("/api/career-card-reports", careerCardReportsRoutes);
 
 /* ---- Then generic /api routers ---- */
 app.use("/api", authRoutes);

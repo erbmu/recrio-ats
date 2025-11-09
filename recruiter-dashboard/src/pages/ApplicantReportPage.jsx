@@ -20,6 +20,8 @@ const labelFromKey = (key = "") =>
     .replace(/\b\w/g, (c) => c.toUpperCase())
     .trim();
 
+const CATEGORY_ORDER = ["technicalSkills", "experience", "culturalFit", "projectAlignment"];
+
 export default function ApplicantReportPage() {
   const { applicantId } = useParams();
   const navigate = useNavigate();
@@ -27,6 +29,8 @@ export default function ApplicantReportPage() {
   const [app, setApp] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState("");
+  const [careerReport, setCareerReport] = React.useState(null);
+  const [careerReportStatus, setCareerReportStatus] = React.useState({ loading: false, error: "" });
 
   React.useEffect(() => {
     let mounted = true;
@@ -47,6 +51,46 @@ export default function ApplicantReportPage() {
       mounted = false;
     };
   }, [applicantId]);
+
+  const candidateReportId = React.useMemo(() => {
+    if (app?.career_card_candidate_id) return String(app.career_card_candidate_id);
+    if (app?.id != null) return String(app.id);
+    return "";
+  }, [app?.career_card_candidate_id, app?.id]);
+
+  React.useEffect(() => {
+    if (!candidateReportId) {
+      setCareerReport(null);
+      setCareerReportStatus({ loading: false, error: "" });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setCareerReportStatus({ loading: true, error: "" });
+        const data = await api(`/career-card-reports/${encodeURIComponent(candidateReportId)}`);
+        if (cancelled) return;
+        setCareerReport(data || null);
+        setCareerReportStatus({ loading: false, error: "" });
+      } catch (fetchErr) {
+        if (cancelled) return;
+        const status = fetchErr?.__debug?.status;
+        let message;
+        if (status === 404) {
+          message = "No Gemini scoring cached yet. Trigger the workflow from Apply or retry later.";
+        } else if (fetchErr?.message && fetchErr.message !== "Server error") {
+          message = fetchErr.message;
+        } else {
+          message = "Unable to load the career card scoring report.";
+        }
+        setCareerReport(null);
+        setCareerReportStatus({ loading: false, error: message });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [candidateReportId]);
 
   const analysisReport = app?.analysis_report || null;
   const analysisGeneratedAt = app?.analysis_generated_at || null;
@@ -138,6 +182,38 @@ export default function ApplicantReportPage() {
       })
       .filter(Boolean);
   }, [analysisReport]);
+
+  const careerReportSummary = React.useMemo(() => {
+    if (!careerReport) return null;
+    const categories = CATEGORY_ORDER.map((key) => {
+      const value = careerReport?.category_scores?.[key] || {};
+      const score = typeof value?.score === "number" ? value.score : Number(value?.score);
+      return {
+        key,
+        score: toDisplayScore(score),
+        feedback: typeof value?.feedback === "string" ? value.feedback.trim() : "",
+      };
+    });
+    const strengths = Array.isArray(careerReport?.strengths)
+      ? careerReport.strengths.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+      : [];
+    const improvements = Array.isArray(careerReport?.improvements)
+      ? careerReport.improvements.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+      : [];
+    const feedback =
+      (typeof careerReport?.overall_feedback === "string" && careerReport.overall_feedback.trim()) ||
+      (typeof careerReport?.raw_report?.scoring?.overallFeedback === "string"
+        ? careerReport.raw_report.scoring.overallFeedback.trim()
+        : "");
+    return {
+      overall: toDisplayScore(careerReport?.overall_score),
+      categories,
+      strengths,
+      improvements,
+      feedback,
+      generated_at: careerReport?.generated_at || careerReport?.updated_at || null,
+    };
+  }, [careerReport]);
 
   const violations = React.useMemo(() => {
     const rows = app?.simulation_violations;
@@ -306,11 +382,11 @@ export default function ApplicantReportPage() {
                   Generated on {new Date(analysisGeneratedAt).toLocaleString()}
                 </time>
               )}
-            </div>
+          </div>
 
-            {analysisReport ? (
-              <>
-                {analysisText && (
+          {analysisReport ? (
+            <>
+              {analysisText && (
                   <p className="mt-4 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
                     {analysisText}
                   </p>
@@ -353,6 +429,115 @@ export default function ApplicantReportPage() {
             )}
           </div>
 
+          <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-800">Career Card Scoring</h2>
+                <p className="text-sm text-gray-500">
+                  Gemini alignment score cached in Supabase so it is only generated once per card.
+                </p>
+              </div>
+              {careerReportSummary?.generated_at && (
+                <time className="text-xs uppercase tracking-wide text-gray-500">
+                  Cached {new Date(careerReportSummary.generated_at).toLocaleString()}
+                </time>
+              )}
+            </div>
+
+            {careerReportStatus.loading && (
+              <p className="mt-4 text-sm text-gray-600">Fetching the latest scoring report…</p>
+            )}
+
+            {!careerReportStatus.loading && careerReportStatus.error && (
+              <div className="mt-4 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {careerReportStatus.error}
+              </div>
+            )}
+
+            {!careerReportStatus.loading &&
+              !careerReportStatus.error &&
+              !careerReportSummary && (
+                <p className="mt-4 text-sm text-gray-600">
+                  The candidate’s career card hasn’t been scored yet. Trigger the scoring workflow from the
+                  application intake form or retry later.
+                </p>
+              )}
+
+            {careerReportSummary && (
+              <>
+                <div className="mt-6 flex flex-wrap items-end gap-6">
+                  <div>
+                    <div className="text-sm text-gray-500">Overall alignment</div>
+                    <div className="mt-1 text-4xl font-semibold text-gray-900">
+                      {careerReportSummary.overall ?? "—"}
+                      <span className="ml-2 text-lg text-gray-400">/100</span>
+                    </div>
+                  </div>
+                  {careerReportSummary.strengths.length > 0 && (
+                    <div className="rounded-xl bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+                      <span className="font-semibold text-emerald-900">Standout:</span>{" "}
+                      {careerReportSummary.strengths[0]}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {careerReportSummary.categories.map((cat) => (
+                    <div key={cat.key} className="rounded-xl border border-gray-200 px-4 py-3">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-sm font-medium text-gray-900">{labelFromKey(cat.key)}</span>
+                        <span className="text-sm text-gray-600">
+                          {cat.score != null ? `${cat.score}/100` : "—"}
+                        </span>
+                      </div>
+                      {cat.feedback && (
+                        <p className="mt-2 text-sm text-gray-600 leading-relaxed">{cat.feedback}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {(careerReportSummary.strengths.length > 0 ||
+                  careerReportSummary.improvements.length > 0) && (
+                  <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {careerReportSummary.strengths.length > 0 && (
+                      <div>
+                        <div className="text-sm font-semibold text-emerald-700">Strengths</div>
+                        <ul className="mt-2 space-y-1 text-sm text-gray-700">
+                          {careerReportSummary.strengths.map((item, idx) => (
+                            <li key={idx} className="flex gap-2">
+                              <span className="text-emerald-500">{"\u2022"}</span>
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {careerReportSummary.improvements.length > 0 && (
+                      <div>
+                        <div className="text-sm font-semibold text-amber-700">Improvements</div>
+                        <ul className="mt-2 space-y-1 text-sm text-gray-700">
+                          {careerReportSummary.improvements.map((item, idx) => (
+                            <li key={idx} className="flex gap-2">
+                              <span className="text-amber-500">{"\u2022"}</span>
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {careerReportSummary.feedback && (
+                  <div className="mt-6 rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-700 leading-relaxed">
+                    {careerReportSummary.feedback}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
           {violations.length > 0 && (
             <div className="bg-white border border-red-100 rounded-lg p-6 shadow-sm">
               <h3 className="text-sm font-semibold text-gray-800">Simulation Violations</h3>
@@ -379,35 +564,35 @@ export default function ApplicantReportPage() {
             <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
               <h3 className="text-sm font-semibold text-gray-800">Identity Verification</h3>
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {identity.selfie_url && (
-                  <div>
-                    <div className="text-sm text-gray-600 mb-2">Selfie Capture</div>
-                    <div className="overflow-hidden rounded-lg border border-gray-200">
-                      <img
-                        src={identity.selfie_url}
-                        alt="Selfie capture"
-                        className="w-full h-48 object-cover bg-gray-100"
-                        loading="lazy"
-                      />
+                  {identity.selfie_url && (
+                    <div>
+                      <div className="text-sm text-gray-600 mb-2">Selfie Capture</div>
+                      <div className="rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
+                        <img
+                          src={identity.selfie_url}
+                          alt="Selfie capture"
+                          className="max-h-72 w-full object-contain bg-gray-50"
+                          loading="lazy"
+                        />
+                      </div>
                     </div>
-                  </div>
-                )}
-                {identity.id_url && (
-                  <div>
-                    <div className="text-sm text-gray-600 mb-2">Government ID</div>
-                    <div className="overflow-hidden rounded-lg border border-gray-200">
-                      <img
-                        src={identity.id_url}
-                        alt="ID capture"
-                        className="w-full h-48 object-cover bg-gray-100"
-                        loading="lazy"
-                      />
+                  )}
+                  {identity.id_url && (
+                    <div>
+                      <div className="text-sm text-gray-600 mb-2">Government ID</div>
+                      <div className="rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
+                        <img
+                          src={identity.id_url}
+                          alt="ID capture"
+                          className="max-h-72 w-full object-contain bg-gray-50"
+                          loading="lazy"
+                        />
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
           {(app.files?.career_card || app.files?.resume) && (
             <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm mt-10">

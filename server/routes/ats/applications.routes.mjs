@@ -386,7 +386,12 @@ r.post(
           });
       }
 
-      return res.json({ ok: true, application_id: applicationId });
+      const candidateReportId = String(applicationId);
+      return res.json({
+        ok: true,
+        application_id: applicationId,
+        career_card_candidate_id: candidateReportId,
+      });
     } catch (e) {
       if (e && e.code === "23505") {
         return res.status(409).json({ field: "candidate_email", error: "duplicate_application" });
@@ -652,6 +657,7 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
       analysis_report,
       analysis_generated_at,
       analysis_overall_score: analysis_overall_score ?? null,
+      career_card_candidate_id: String(a.id),
     });
 
   } catch (e) {

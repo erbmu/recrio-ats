@@ -25,11 +25,14 @@ export default function ApplyPage() {
 
   const [banner, setBanner] = useState("");
   const [errors, setErrors] = useState({});
+  const [reportPrep, setReportPrep] = useState({ status: "idle", error: "", updatedAt: null });
+  const [lastCandidateId, setLastCandidateId] = useState("");
 
   const honeypotRef = useRef(null);
   const consentRef = useRef(null);
   const ccInputRef = useRef(null);
   const cvInputRef = useRef(null);
+  const reportKickoffsRef = useRef(new Set());
 
   const [ccPreview, setCcPreview] = useState("");
   const [cvPreview, setCvPreview] = useState("");
@@ -182,6 +185,48 @@ export default function ApplyPage() {
   };
   const preventDefault = (e) => e.preventDefault();
 
+  const triggerCareerCardReport = async (candidateId, { force = false } = {}) => {
+    if (!candidateId) return;
+    const key = String(candidateId);
+    if (!force && reportKickoffsRef.current.has(key)) return;
+    reportKickoffsRef.current.add(key);
+    setReportPrep({ status: "loading", error: "", updatedAt: null });
+    try {
+      const resp = await fetch(`${API}/api/career-card-reports`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ candidate_id: key, forceRefresh: force }),
+      });
+      const respText = await resp.text();
+      let respJson = null;
+      try {
+        respJson = respText ? JSON.parse(respText) : null;
+      } catch {
+        respJson = null;
+      }
+      if (!resp.ok) {
+        const errMsg =
+          (respJson && respJson.error) || `Failed to prepare AI report (${resp.status})`;
+        throw new Error(errMsg);
+      }
+      setReportPrep({
+        status: "ready",
+        error: "",
+        updatedAt: new Date().toISOString(),
+      });
+      return respJson;
+    } catch (err) {
+      setReportPrep({
+        status: "error",
+        error: err?.message || "Unable to pre-generate the AI scoring report.",
+        updatedAt: null,
+      });
+      throw err;
+    } finally {
+      reportKickoffsRef.current.delete(key);
+    }
+  };
+
   const renderQualifications = (text) => {
     if (!text) return null;
     const items = text
@@ -210,6 +255,8 @@ export default function ApplyPage() {
     e.preventDefault();
     setBanner("");
     setErrors({});
+    setReportPrep({ status: "idle", error: "", updatedAt: null });
+    setLastCandidateId("");
 
     if (honeypotRef.current?.value) {
       setBanner("Submission rejected.");
@@ -255,29 +302,48 @@ export default function ApplyPage() {
         method: "POST",
         body: fd,
       });
+      const respText = await r.text();
+      let respJson = null;
+      try {
+        respJson = respText ? JSON.parse(respText) : null;
+      } catch {
+        respJson = null;
+      }
+
       if (!r.ok) {
         let msg = `Submission failed (${r.status})`;
-        try {
-          const j = await r.json();
-          if (j?.field && j?.error) {
-            setErrors({ [j.field]: j.error });
-            setBanner("Please fix the highlighted fields below.");
-          } else if (j?.error) {
-            msg = j.error;
-            setBanner(msg);
-          } else {
-            setBanner(msg);
-          }
-        } catch {
+        const j = respJson;
+        if (j?.field && j?.error) {
+          setErrors({ [j.field]: j.error });
+          setBanner("Please fix the highlighted fields below.");
+        } else if (j?.error) {
+          msg = j.error;
+          setBanner(msg);
+        } else {
           setBanner(msg);
         }
         return;
       }
+
       setOk(true);
       e.currentTarget.reset();
       setCcPreview("");
       setCvPreview("");
       setBanner("");
+
+      const candidateReportId =
+        respJson?.career_card_candidate_id ??
+        respJson?.candidate_report_id ??
+        respJson?.application_id ??
+        null;
+
+      if (candidateReportId) {
+        const key = String(candidateReportId);
+        setLastCandidateId(key);
+        triggerCareerCardReport(key).catch(() => {});
+      } else {
+        setReportPrep({ status: "idle", error: "", updatedAt: null });
+      }
     } catch (e2) {
       setBanner(e2?.message || "Submission failed");
     } finally {
@@ -335,6 +401,33 @@ export default function ApplyPage() {
             >
               Submit another application
             </a>
+            {lastCandidateId && (
+              <div className="mt-6 rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/70 px-5 py-4 text-sm text-emerald-900">
+                <div className="font-semibold text-emerald-900">Career card scoring</div>
+                {reportPrep.status === "loading" && (
+                  <p className="mt-2 text-emerald-800">
+                    Pre-generating the AI report so hiring teams can review your career card instantly…
+                  </p>
+                )}
+                {reportPrep.status === "ready" && (
+                  <p className="mt-2 text-emerald-800">
+                    AI scoring cached successfully. You're all set!
+                  </p>
+                )}
+                {reportPrep.status === "error" && (
+                  <div className="mt-3 space-y-3">
+                    <p className="text-red-600">{reportPrep.error}</p>
+                    <button
+                      type="button"
+                      onClick={() => triggerCareerCardReport(lastCandidateId, { force: true })}
+                      className="inline-flex h-10 items-center justify-center rounded-xl border border-emerald-400 px-4 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 transition"
+                    >
+                      Retry AI scoring
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
