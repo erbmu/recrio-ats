@@ -122,6 +122,38 @@ export default function ApplicantReportPage() {
     };
   }, [candidateReportId]);
 
+  const careerReportSummary = React.useMemo(() => {
+    if (!careerReport) return null;
+    const categories = CATEGORY_ORDER.map((key) => {
+      const value = careerReport?.category_scores?.[key] || {};
+      const score = typeof value?.score === "number" ? value.score : Number(value?.score);
+      return {
+        key,
+        score: toDisplayScore(score),
+        feedback: typeof value?.feedback === "string" ? value.feedback.trim() : "",
+      };
+    });
+    const strengths = Array.isArray(careerReport?.strengths)
+      ? careerReport.strengths.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+      : [];
+    const improvements = Array.isArray(careerReport?.improvements)
+      ? careerReport.improvements.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+      : [];
+    const feedback =
+      (typeof careerReport?.overall_feedback === "string" && careerReport.overall_feedback.trim()) ||
+      (typeof careerReport?.raw_report?.scoring?.overallFeedback === "string"
+        ? careerReport.raw_report.scoring.overallFeedback.trim()
+        : "");
+    return {
+      overall: toDisplayScore(careerReport?.overall_score),
+      categories,
+      strengths,
+      improvements,
+      feedback,
+      generated_at: careerReport?.generated_at || careerReport?.updated_at || null,
+    };
+  }, [careerReport]);
+
   const analysisReport = app?.analysis_report || null;
   const analysisGeneratedAt = app?.analysis_generated_at || null;
 
@@ -141,7 +173,7 @@ export default function ApplicantReportPage() {
   const careerCardScoreRaw = React.useMemo(() => {
     const raw = careerReportSummary?.overall ?? null;
     return clampScore(raw);
-  }, [careerReportSummary?.overall]);
+  }, [careerReportSummary]);
 
   const overallComposite = React.useMemo(() => {
     if (typeof app?.overall_score === "number") {
@@ -239,38 +271,6 @@ export default function ApplicantReportPage() {
       })
       .filter(Boolean);
   }, [analysisReport]);
-
-  const careerReportSummary = React.useMemo(() => {
-    if (!careerReport) return null;
-    const categories = CATEGORY_ORDER.map((key) => {
-      const value = careerReport?.category_scores?.[key] || {};
-      const score = typeof value?.score === "number" ? value.score : Number(value?.score);
-      return {
-        key,
-        score: toDisplayScore(score),
-        feedback: typeof value?.feedback === "string" ? value.feedback.trim() : "",
-      };
-    });
-    const strengths = Array.isArray(careerReport?.strengths)
-      ? careerReport.strengths.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
-      : [];
-    const improvements = Array.isArray(careerReport?.improvements)
-      ? careerReport.improvements.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
-      : [];
-    const feedback =
-      (typeof careerReport?.overall_feedback === "string" && careerReport.overall_feedback.trim()) ||
-      (typeof careerReport?.raw_report?.scoring?.overallFeedback === "string"
-        ? careerReport.raw_report.scoring.overallFeedback.trim()
-        : "");
-    return {
-      overall: toDisplayScore(careerReport?.overall_score),
-      categories,
-      strengths,
-      improvements,
-      feedback,
-      generated_at: careerReport?.generated_at || careerReport?.updated_at || null,
-    };
-  }, [careerReport]);
 
   const violations = React.useMemo(() => {
     const rows = app?.simulation_violations;
