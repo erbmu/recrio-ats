@@ -22,6 +22,36 @@ const labelFromKey = (key = "") =>
 
 const CATEGORY_ORDER = ["technicalSkills", "experience", "culturalFit", "projectAlignment"];
 
+const clampScore = (value) => {
+  if (value == null) return null;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  if (num <= 0) return 0;
+  if (num >= 100) return 100;
+  return num;
+};
+
+const adjustedScore = (value, gamma) => {
+  const clamped = clampScore(value);
+  if (clamped == null) return null;
+  return 100 * Math.pow(clamped / 100, gamma);
+};
+
+const combineScores = (simulationScore, careerCardScore) => {
+  const ws = 0.7;
+  const wc = 0.3;
+  const hasSim = simulationScore != null && Number.isFinite(Number(simulationScore));
+  const hasCareer = careerCardScore != null && Number.isFinite(Number(careerCardScore));
+  const denom = (hasSim ? ws : 0) + (hasCareer ? wc : 0);
+  if (!denom) return { score: null, confidence: 0 };
+  const numer =
+    (hasSim ? ws * adjustedScore(simulationScore, 1.1) : 0) +
+    (hasCareer ? wc * adjustedScore(careerCardScore, 1.0) : 0);
+  const score = Math.max(0, Math.min(100, numer / denom));
+  const confidence = Number((denom / (ws + wc)).toFixed(4));
+  return { score, confidence };
+};
+
 export default function ApplicantReportPage() {
   const { applicantId } = useParams();
   const navigate = useNavigate();
@@ -92,22 +122,77 @@ export default function ApplicantReportPage() {
     };
   }, [candidateReportId]);
 
+  const careerReportSummary = React.useMemo(() => {
+    if (!careerReport) return null;
+    const categories = CATEGORY_ORDER.map((key) => {
+      const value = careerReport?.category_scores?.[key] || {};
+      const score = typeof value?.score === "number" ? value.score : Number(value?.score);
+      return {
+        key,
+        score: toDisplayScore(score),
+        feedback: typeof value?.feedback === "string" ? value.feedback.trim() : "",
+      };
+    });
+    const strengths = Array.isArray(careerReport?.strengths)
+      ? careerReport.strengths.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+      : [];
+    const improvements = Array.isArray(careerReport?.improvements)
+      ? careerReport.improvements.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+      : [];
+    const feedback =
+      (typeof careerReport?.overall_feedback === "string" && careerReport.overall_feedback.trim()) ||
+      (typeof careerReport?.raw_report?.scoring?.overallFeedback === "string"
+        ? careerReport.raw_report.scoring.overallFeedback.trim()
+        : "");
+    return {
+      overall: toDisplayScore(careerReport?.overall_score),
+      categories,
+      strengths,
+      improvements,
+      feedback,
+      generated_at: careerReport?.generated_at || careerReport?.updated_at || null,
+    };
+  }, [careerReport]);
+
   const analysisReport = app?.analysis_report || null;
   const analysisGeneratedAt = app?.analysis_generated_at || null;
-  const overallComposite = app?.overall_score ?? null;
-  const analysisOverall =
-    overallComposite ??
-    app?.analysis_overall_score ??
-    analysisReport?.overallStartupReadinessIndex ??
-    null;
-  const overallScore = toDisplayScore(analysisOverall);
+
+  const simulationScoreRaw = React.useMemo(() => {
+    const candidates = [
+      app?.analysis_overall_score,
+      analysisReport?.overallStartupReadinessIndex,
+      app?.ai_scores?.overall ?? app?.ai_scores?.score ?? null,
+    ];
+    for (const val of candidates) {
+      const num = clampScore(val);
+      if (num != null) return num;
+    }
+    return null;
+  }, [app?.analysis_overall_score, analysisReport?.overallStartupReadinessIndex, app?.ai_scores]);
+
+  const careerCardScoreRaw = React.useMemo(() => {
+    const raw = careerReportSummary?.overall ?? null;
+    return clampScore(raw);
+  }, [careerReportSummary?.overall]);
+
+  const overallComposite = React.useMemo(() => {
+    if (typeof app?.overall_score === "number") {
+      const clamped = clampScore(app.overall_score);
+      if (clamped != null) return clamped;
+    }
+    const { score } = combineScores(simulationScoreRaw, careerCardScoreRaw);
+    return score;
+  }, [app?.overall_score, simulationScoreRaw, careerCardScoreRaw]);
+
+  const hasOverallScore = overallComposite != null && overallComposite > 0;
+  const overallScore = hasOverallScore ? toDisplayScore(overallComposite) : null;
 
   const recommendation = React.useMemo(() => {
-    if (overallScore == null) return null;
+    if (!hasOverallScore || overallScore == null) return null;
     if (overallScore >= 80) {
       return {
         title: "Move forward confidently",
-        body: "This simulation score indicates a very strong match. Keep the momentum and advance the candidate.",
+        body: "This candidate shows a very strong match across simulations and their career card. Keep the momentum and advance them.",
         icon: "↑",
         border: "border-emerald-200",
         iconBg: "bg-emerald-600 text-white",
@@ -117,7 +202,7 @@ export default function ApplicantReportPage() {
     if (overallScore >= 60) {
       return {
         title: "Worth continued consideration",
-        body: "The candidate meets most success signals. Proceed while validating the areas flagged in the report.",
+        body: "The blended signals are encouraging. Proceed while validating the areas flagged in the report.",
         icon: "↗",
         border: "border-amber-200",
         iconBg: "bg-amber-500 text-white",
@@ -126,13 +211,13 @@ export default function ApplicantReportPage() {
     }
     return {
       title: "Hold before advancing",
-      body: "Key indicators fell below the recommended range. Revisit the profile before committing next steps.",
+      body: "Key indicators fell below the recommended range. Revisit this profile before committing to next steps.",
       icon: "!",
       border: "border-rose-200",
       iconBg: "bg-rose-500 text-white",
       badgeBg: "bg-rose-50 text-rose-700",
     };
-  }, [overallScore]);
+  }, [hasOverallScore, overallScore]);
 
   const analysisText = React.useMemo(() => {
     if (!analysisReport || typeof analysisReport !== "object") return "";
