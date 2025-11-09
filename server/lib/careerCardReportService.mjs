@@ -155,6 +155,10 @@ async function resolveFilePath(storagePath = "") {
       /* try next */
     }
   }
+  console.warn("[careerCard] Unable to resolve storage path", {
+    storagePath,
+    attempts,
+  });
   return null;
 }
 
@@ -370,7 +374,13 @@ async function getCareerCardData(application) {
   if (!fileRow) return null;
 
   const resolved = await resolveFilePath(fileRow.storage_path);
-  if (!resolved) return null;
+  if (!resolved) {
+    console.warn("[careerCard] Storage path not found", {
+      applicationId: application.application_id,
+      storage_path: fileRow.storage_path,
+    });
+    return null;
+  }
 
   if (fileRow.mime === "application/json") {
     try {
@@ -450,7 +460,12 @@ async function buildCandidateContext(identifiers) {
   if (!application) throw ServiceError("candidate_not_found", 404);
 
   const careerCardData = await getCareerCardData(application);
-  if (!careerCardData) throw ServiceError("career_card_missing", 409);
+  if (!careerCardData) {
+    console.warn("[careerCard] Missing structured data after file scan", {
+      applicationId: application.application_id,
+    });
+    throw ServiceError("career_card_missing", 409);
+  }
 
   const companyDescription =
     cleanText(application.company_description) ||
