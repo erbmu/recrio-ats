@@ -41,7 +41,7 @@ export async function makeSimulationForApplication(applicationId) {
   const payload = String(row.application_id);
   const sig = sign(payload);
   const token = `${payload}.${sig}`;
-  const url = `${SIM_PUBLIC_BASE.replace(/\/+$/, "")}/s/${token}`;
+  const url = `${SIM_PUBLIC_BASE.replace(/\/+$/, "")}/sim/${token}`;
 
   // 4) persist in simulations table
   await db("simulations")

@@ -1,6 +1,22 @@
 import React from "react";
 import { api } from "../api/client";
 
+const stringOrJson = (value) => {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+};
+
+const withBoldMarkers = (value) =>
+  stringOrJson(value).replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+
 export default function CompareView() {
   const [jobs, setJobs] = React.useState([]);
   const [selectedJob, setSelectedJob] = React.useState("");
@@ -85,21 +101,12 @@ export default function CompareView() {
 
   const emptyState = !loadingJobs && jobs.length === 0;
   const parsedReport = React.useMemo(() => {
-    const report = status.result?.report;
+    const report = stringOrJson(status.result?.report);
     if (!report) return null;
     const candidateALabel = status.result?.candidates?.a?.name || "Candidate A";
     const candidateBLabel = status.result?.candidates?.b?.name || "Candidate B";
-    const formatText = (value) => {
-      if (typeof value === "string") return value;
-      if (value == null) return "";
-      if (typeof value === "object") {
-        try { return JSON.stringify(value); } catch { return String(value); }
-      }
-      return String(value);
-    };
-
     const replaceLabels = (text = "") =>
-      formatText(text)
+      stringOrJson(text)
         .replace(/Candidate A/gi, candidateALabel)
         .replace(/Candidate B/gi, candidateBLabel);
 
@@ -146,7 +153,12 @@ export default function CompareView() {
 
     const structureSections = [...defaultOrder, ...sectionMap.keys()]
       .filter((title, idx, arr) => arr.indexOf(title) === idx)
-      .map((title) => sectionMap.get(title) || { title, content: [] });
+      .map((title) => {
+        const section = sectionMap.get(title);
+        return section && Array.isArray(section.content)
+          ? section
+          : { title, content: [] };
+      });
 
     const decorateContent = (content) => {
       return content.flatMap((paragraph) => {
@@ -186,7 +198,10 @@ export default function CompareView() {
 
     const normalizedRecommendation = replaceLabels(recommendation);
 
-    return { sections, recommendation: normalizedRecommendation };
+    return {
+      sections,
+      recommendation: normalizedRecommendation,
+    };
   }, [status.result]);
 
   return (
@@ -305,9 +320,9 @@ export default function CompareView() {
               {(Array.isArray(parsedReport.sections) ? parsedReport.sections : [])
                 .filter((section) =>
                   (section?.content || []).some((block) =>
-                    block.type === "list"
+                    block?.type === "list"
                       ? (block.items || []).length > 0
-                      : Boolean(block?.text && block.text.trim())
+                      : Boolean(block?.text && stringOrJson(block.text).trim())
                   )
                 )
                 .map((section) => (
@@ -328,7 +343,12 @@ export default function CompareView() {
                     )}
                   </div>
                   <div className="space-y-3 text-sm text-gray-700 leading-relaxed">
-                    {section.content.map((block, idx) => {
+                    {(section?.content || []).map((rawBlock, idx) => {
+                      const block =
+                        rawBlock && typeof rawBlock === "object"
+                          ? rawBlock
+                          : { type: "text", text: stringOrJson(rawBlock) };
+
                       if (block.type === "candidate") {
                         const primary = status.result?.candidates?.a?.name || "Candidate A";
                         const badgeColor =
@@ -348,7 +368,7 @@ export default function CompareView() {
                             <p
                               className="mt-2 text-gray-800"
                               dangerouslySetInnerHTML={{
-                                __html: (block.text || '').replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>"),
+                                __html: withBoldMarkers(block.text),
                               }}
                             />
                           </div>
@@ -357,16 +377,13 @@ export default function CompareView() {
                       if (block.type === "list") {
                         return (
                           <ul key={idx} className="ml-4 list-disc space-y-1">
-                            {(block.items || []).map((item, i) => {
-                              const highlighted = (item || '').replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-                              return (
-                                <li
-                                  key={i}
-                                  className="text-gray-700"
-                                  dangerouslySetInnerHTML={{ __html: highlighted }}
-                                />
-                              );
-                            })}
+                            {(block.items || []).map((item, i) => (
+                              <li
+                                key={i}
+                                className="text-gray-700"
+                                dangerouslySetInnerHTML={{ __html: withBoldMarkers(item) }}
+                              />
+                            ))}
                           </ul>
                         );
                       }
@@ -375,7 +392,7 @@ export default function CompareView() {
                           key={idx}
                           className="whitespace-pre-line"
                           dangerouslySetInnerHTML={{
-                            __html: (block.text || '').replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>"),
+                            __html: withBoldMarkers(block.text),
                           }}
                         />
                       );
