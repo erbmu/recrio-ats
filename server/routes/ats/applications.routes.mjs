@@ -20,6 +20,7 @@ import {
   __testables as careerCardTestables,
   fetchCareerCardReportsBulk,
   calculateOverallScore,
+  ensureCareerCardReport,
 } from "../../lib/careerCardReportService.mjs";
 
 /* ------------------------------------------------------------------------- */
@@ -537,6 +538,25 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
     const careerCardReports = await fetchCareerCardReportsBulk({
       applicationIds: apps.map((a) => a.id),
     });
+    const missingCareerReports = apps.filter(
+      (app) => !careerCardReports.has(String(app.id))
+    );
+
+    for (const app of missingCareerReports) {
+      try {
+        const ensured = await ensureCareerCardReport({
+          candidateId: String(app.id),
+        });
+        if (ensured?.report) {
+          careerCardReports.set(String(app.id), ensured.report);
+        }
+      } catch (err) {
+        console.warn("[applications.job] ensureCareerCardReport failed", {
+          applicationId: app.id,
+          error: err?.message || err,
+        });
+      }
+    }
 
     const parseSimulationScore = (a) => {
       const analysisOverall = a?.analysis_overall_score;
@@ -561,6 +581,11 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
       app.career_card_generated_at = careerReport?.generated_at || null;
       app.overall_score = combinedScore;
       app.overall_confidence = confidence;
+      app.simulation_completed = Boolean(
+        app.simulation_score != null ||
+        app.analysis_generated_at ||
+        (app.sim_status && String(app.sim_status).toLowerCase() === "ready")
+      );
     }
 
     apps.sort((a, b) => {

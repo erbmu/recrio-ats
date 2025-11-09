@@ -129,12 +129,14 @@ export default function JobDetailPage() {
                 <th className="px-4 py-3 text-left font-medium">Rank</th>
                 <th className="px-4 py-3 text-left font-medium">Name</th>
                 <th className="px-4 py-3 text-left font-medium">Overall AI Score</th>
+                <th className="px-4 py-3 text-left font-medium">Simulation Completed</th>
                 <th className="px-4 py-3 text-left font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {apps.map((a, idx) => {
                 const scoreValue = getScoreValue(a);
+                const simulationDone = a?.simulation_completed ? "Yes" : "No";
                 return (
                   <tr key={a.id} className="hover:bg-gray-50">
                     <TableCell className="w-24">{idx + 1}</TableCell>
@@ -148,6 +150,7 @@ export default function JobDetailPage() {
                         {scoreValue != null ? `${scoreValue}%` : "Pending"}
                       </span>
                     </TableCell>
+                    <TableCell className="w-40 text-sm text-gray-700">{simulationDone}</TableCell>
                     <TableCell className="w-40">
                       <button
                         onClick={() => navigate(`/dashboard/job/${id}/applicant/${a.id}`)}
