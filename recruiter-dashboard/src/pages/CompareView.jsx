@@ -85,51 +85,83 @@ export default function CompareView() {
 
   const emptyState = !loadingJobs && jobs.length === 0;
   const parsedReport = React.useMemo(() => {
-    if (!status.result?.report) return null;
-    const raw = status.result.report
+    const report = status.result?.report;
+    if (!report) return null;
+    const lines = report
       .split(/\n+/)
       .map((line) => line.trim())
       .filter(Boolean);
-    const sectionTitles = [
+
+    const sectionMap = new Map();
+    const ensureSection = (title) => {
+      const key = title.toLowerCase();
+      if (!sectionMap.has(key)) {
+        sectionMap.set(key, { title, content: [] });
+      }
+      return sectionMap.get(key);
+    };
+
+    const defaultOrder = [
       "Overview",
       "Strengths & Risks",
       "Comparative Analysis",
       "Final Verdict",
     ];
-    const sections = [];
-    let current = null;
-    const startSection = (title) => {
-      const normalized = sectionTitles.find(
-        (t) => t.toLowerCase() === title.toLowerCase()
-      );
-      const section = {
-        title: normalized || title || "Overview",
-        content: [],
-      };
-      sections.push(section);
-      return section;
-    };
-    for (const line of raw) {
-      const match = line.match(
-        /^[-*]?\s*(Overview|Strengths & Risks|Comparative Analysis|Final Verdict)\s*:?/i
-      );
-      if (match) {
-        current = startSection(match[1]);
-        const remaining = line.slice(match[0].length).trim();
-        if (remaining) current.content.push(remaining);
-      } else if (line.match(/^[-*]?\s*Recommended:/i)) {
+    let current = ensureSection("Overview");
+    let recommendation = "";
+
+    const sectionRegex =
+      /^[-*]?\s*(Overview|Strengths & Risks|Comparative Analysis|Final Verdict)\s*:?/i;
+
+    for (const line of lines) {
+      if (/^[-*]?\s*Recommended:/i.test(line)) {
+        recommendation = line.replace(/^[-*]?\s*Recommended:\s*/i, "").trim();
         continue;
-      } else {
-        if (!current) current = startSection("Overview");
-        current.content.push(line);
       }
+      const match = line.match(sectionRegex);
+      if (match) {
+        current = ensureSection(match[1]);
+        const rest = line.slice(match[0].length).trim();
+        if (rest) current.content.push(rest);
+        continue;
+      }
+      current.content.push(line);
     }
-    const recommendationLine = raw.find((line) =>
-      /Recommended:/i.test(line)
-    );
-    const recommendation = recommendationLine
-      ? recommendationLine.replace(/^[-*]?\s*Recommended:\s*/i, "").trim()
-      : "";
+
+    const structureSections = [...defaultOrder, ...sectionMap.keys()]
+      .filter((title, idx, arr) => arr.indexOf(title) === idx)
+      .map((title) => sectionMap.get(title) || { title, content: [] });
+
+    const decorateContent = (content) => {
+      return content.flatMap((paragraph) => {
+        const candidateMatch = paragraph.match(
+          /(Candidate [AB])\s*:\s*(.*)/i
+        );
+        if (candidateMatch) {
+          return [
+            {
+              type: "candidate",
+              label: candidateMatch[1],
+              text: candidateMatch[2].trim(),
+            },
+          ];
+        }
+        const items = paragraph
+          .split(/-\s+/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+        if (items.length > 1) {
+          return [{ type: "list", items }];
+        }
+        return [{ type: "text", text: paragraph }];
+      });
+    };
+
+    const sections = structureSections.map((section) => ({
+      title: section.title,
+      content: decorateContent(section.content),
+    }));
+
     return { sections, recommendation };
   }, [status.result]);
 
@@ -249,7 +281,7 @@ export default function CompareView() {
               {parsedReport.sections.map((section) => (
                 <section
                   key={section.title}
-                  className={`rounded-2xl border px-4 py-3 ${
+                  className={`rounded-2xl border px-4 py-3 space-y-2 ${
                     section.title === "Final Verdict"
                       ? "border-emerald-200 bg-emerald-50"
                       : "border-gray-100 bg-gray-50"
@@ -263,24 +295,39 @@ export default function CompareView() {
                       </span>
                     )}
                   </div>
-                  <div className="mt-2 space-y-2 text-sm text-gray-700 leading-relaxed">
-                    {section.content.map((paragraph, idx) => {
-                      const bullets = paragraph
-                        .split(/-\s+/)
-                        .map((line) => line.trim())
-                        .filter((line) => line);
-                      if (bullets.length > 1) {
+                  <div className="space-y-2 text-sm text-gray-700 leading-relaxed">
+                    {section.content.map((block, idx) => {
+                      if (block.type === "candidate") {
+                        const badgeColor =
+                          block.label.toLowerCase().includes("a")
+                            ? "bg-gray-900 text-white"
+                            : "bg-gray-200 text-gray-900";
+                        return (
+                          <div
+                            key={idx}
+                            className="rounded-xl border border-gray-200 bg-white px-3 py-2"
+                          >
+                            <div
+                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${badgeColor}`}
+                            >
+                              {block.label}
+                            </div>
+                            <p className="mt-1 text-gray-700">{block.text}</p>
+                          </div>
+                        );
+                      }
+                      if (block.type === "list") {
                         return (
                           <ul key={idx} className="ml-4 list-disc space-y-1">
-                            {bullets.map((line, i) => (
-                              <li key={i}>{line}</li>
+                            {block.items.map((item, i) => (
+                              <li key={i}>{item}</li>
                             ))}
                           </ul>
                         );
                       }
                       return (
                         <p key={idx} className="whitespace-pre-line">
-                          {paragraph}
+                          {block.text}
                         </p>
                       );
                     })}
