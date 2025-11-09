@@ -89,8 +89,17 @@ export default function CompareView() {
     if (!report) return null;
     const candidateALabel = status.result?.candidates?.a?.name || "Candidate A";
     const candidateBLabel = status.result?.candidates?.b?.name || "Candidate B";
+    const formatText = (value) => {
+      if (typeof value === "string") return value;
+      if (value == null) return "";
+      if (typeof value === "object") {
+        try { return JSON.stringify(value); } catch { return String(value); }
+      }
+      return String(value);
+    };
+
     const replaceLabels = (text = "") =>
-      text
+      formatText(text)
         .replace(/Candidate A/gi, candidateALabel)
         .replace(/Candidate B/gi, candidateBLabel);
 
@@ -153,7 +162,9 @@ export default function CompareView() {
             {
               type: "candidate",
               label,
-              text: replaceLabels(paragraph.replace(candidateMatch[1], label).replace(/^[-*]\s*/, "")),
+              text: replaceLabels(
+                paragraph.replace(candidateMatch[1], label).replace(/^[-*]\s*/, "")
+              ),
             },
           ];
         }
@@ -291,12 +302,12 @@ export default function CompareView() {
               <p className="text-sm text-gray-500">Job: {status.result.job?.title || "Selected role"}</p>
             </div>
             <div className="grid gap-4">
-              {parsedReport.sections
+              {(Array.isArray(parsedReport.sections) ? parsedReport.sections : [])
                 .filter((section) =>
-                  section.content.some((block) =>
+                  (section?.content || []).some((block) =>
                     block.type === "list"
-                      ? block.items.length > 0
-                      : Boolean(block.text && block.text.trim())
+                      ? (block.items || []).length > 0
+                      : Boolean(block?.text && block.text.trim())
                   )
                 )
                 .map((section) => (
@@ -337,7 +348,7 @@ export default function CompareView() {
                             <p
                               className="mt-2 text-gray-800"
                               dangerouslySetInnerHTML={{
-                                __html: block.text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>"),
+                                __html: (block.text || '').replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>"),
                               }}
                             />
                           </div>
@@ -346,8 +357,8 @@ export default function CompareView() {
                       if (block.type === "list") {
                         return (
                           <ul key={idx} className="ml-4 list-disc space-y-1">
-                            {block.items.map((item, i) => {
-                              const highlighted = item.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+                            {(block.items || []).map((item, i) => {
+                              const highlighted = (item || '').replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
                               return (
                                 <li
                                   key={i}
@@ -364,7 +375,7 @@ export default function CompareView() {
                           key={idx}
                           className="whitespace-pre-line"
                           dangerouslySetInnerHTML={{
-                            __html: block.text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>"),
+                            __html: (block.text || '').replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>"),
                           }}
                         />
                       );
