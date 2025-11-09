@@ -158,7 +158,7 @@ const submit = async (e) => {
             <div className="flex items-center justify-between">
               <label className="block text-sm font-medium text-gray-700 mb-1">Access code</label>
               <span className="text-xs text-gray-500">
-                Invite-only. Need a code? Email <span className="font-medium">recrio@ggmail.com</span>
+                Invite-only. Need a code? Email <span className="font-medium">access@recrio-ai.com</span>
               </span>
             </div>
             <input
