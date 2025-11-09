@@ -42,6 +42,7 @@ const REQUIRED_CATEGORY_KEYS = [
 ];
 
 const MAX_PDF_TEXT_CHARS = 20000;
+const MAX_INLINE_PDF_BYTES = 5 * 1024 * 1024;
 
 const ServiceError = (message, status = 500, details) => {
   const err = new Error(message);
@@ -387,23 +388,52 @@ async function getCareerCardData(application) {
   if (fileRow.mime === "application/pdf") {
     try {
       const buffer = await fsp.readFile(resolved);
-      const text = extractTextFromPdfBuffer(buffer);
-      if (!text) return null;
+      let text = extractTextFromPdfBuffer(buffer);
+      if (!text) {
+        const fallback = normalizeExtractedText(buffer.toString("utf8"));
+        if (fallback) {
+          text = fallback.slice(0, MAX_PDF_TEXT_CHARS);
+        }
+      }
+      const inlineAllowed = buffer.length <= MAX_INLINE_PDF_BYTES;
+      const inlineDataBase64 = inlineAllowed ? buffer.toString("base64") : null;
+
       return {
-        format: "pdf_extracted_text",
+        format: text ? "pdf_extracted_text" : "pdf_attachment",
         filename: fileRow.original_name,
         mime: fileRow.mime,
-        text,
-        approx_characters: text.length,
+        text: text || "PDF text extraction failed automatically; refer to inline_data if available.",
+        approx_characters: text ? text.length : null,
         extracted_at: new Date().toISOString(),
         source_path: fileRow.storage_path,
+        size_bytes: Number(fileRow.size_bytes || buffer.length),
+        inline_data_base64: inlineDataBase64,
+        inline_data_truncated: !inlineAllowed,
       };
     } catch (err) {
       console.warn("[careerCard] Failed to extract PDF text", {
         path: resolved,
         error: err?.message || err,
       });
-      return null;
+      try {
+        const buffer = await fsp.readFile(resolved);
+        return {
+          format: "pdf_attachment",
+          filename: fileRow.original_name,
+          mime: fileRow.mime,
+          text: "PDF text extraction threw an error; raw bytes attached.",
+          approx_characters: null,
+          extracted_at: new Date().toISOString(),
+          source_path: fileRow.storage_path,
+          size_bytes: Number(fileRow.size_bytes || buffer.length),
+          inline_data_base64: buffer.length <= MAX_INLINE_PDF_BYTES ? buffer.toString("base64") : null,
+          inline_data_truncated: buffer.length > MAX_INLINE_PDF_BYTES,
+          extraction_error: err?.message || String(err),
+        };
+      } catch (fallbackErr) {
+        console.warn("[careerCard] Secondary PDF read failed", fallbackErr?.message || fallbackErr);
+        return null;
+      }
     }
   }
 
@@ -430,8 +460,12 @@ async function buildCandidateContext(identifiers) {
   if (application.job_title) roleParts.push(cleanText(application.job_title));
   const roleDescription = roleParts.filter(Boolean).join("\n") || "";
 
+  const hashCard = careerCardData?.inline_data_base64
+    ? { ...careerCardData, inline_data_base64: "__inline_pdf__" }
+    : careerCardData;
+
   const cardHash = hashCareerCardInputs({
-    careerCardData,
+    careerCardData: hashCard,
     companyDescription,
     roleDescription,
   });
@@ -556,11 +590,17 @@ Your analysis should be thorough, fair, and constructive. Consider:
 
 Be specific and provide actionable feedback.`;
 
-  const stringifiedCard = JSON.stringify(
-    careerCardData,
-    (_key, val) => (typeof val === "bigint" ? val.toString() : val),
-    2
-  );
+  const sanitizedCard =
+    careerCardData && typeof careerCardData === "object"
+      ? (() => {
+          const clone = { ...careerCardData };
+          if (clone.inline_data_base64) {
+            clone.inline_data_attached = true;
+            delete clone.inline_data_base64;
+          }
+          return clone;
+        })()
+      : careerCardData;
 
   const userPrompt = `Analyze this career card for alignment with the company and role:
 
@@ -571,9 +611,17 @@ ROLE DESCRIPTION:
 ${roleDescription || "(not provided)"}
 
 CAREER CARD:
-${stringifiedCard}
+${JSON.stringify(sanitizedCard, (_key, value) =>
+    typeof value === "bigint" ? value.toString() : value,
+  2)}
 
 Provide a comprehensive scoring and feedback.`;
+
+  const inlineDataBase64 =
+    typeof careerCardData?.inline_data_base64 === "string"
+      ? careerCardData.inline_data_base64
+      : null;
+  const inlineMime = careerCardData?.mime || "application/pdf";
 
   const body = {
     system_instruction: {
@@ -582,7 +630,17 @@ Provide a comprehensive scoring and feedback.`;
     contents: [
       {
         role: "user",
-        parts: [{ text: userPrompt }],
+        parts: inlineDataBase64
+          ? [
+              { text: userPrompt },
+              {
+                inline_data: {
+                  mime_type: inlineMime,
+                  data: inlineDataBase64,
+                },
+              },
+            ]
+          : [{ text: userPrompt }],
       },
     ],
     tools: [

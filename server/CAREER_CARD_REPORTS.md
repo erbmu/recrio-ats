@@ -84,7 +84,7 @@ uuid = uuidv5(
 - If the ATS application already populates `applications.career_card` with structured JSON, that blob is used verbatim.
 - Otherwise we read the latest uploaded `career_card` file:
   * `.json` uploads are parsed directly.
-  * `.pdf` uploads are processed server-side (no external dependencies) by extracting readable text from the PDF streams. The text is wrapped in a JSON payload (`{ format: "pdf_extracted_text", text: "…" }`) so hashing/caching still behaves consistently.
+  * `.pdf` uploads are processed server-side. We extract text when possible and, regardless of extraction success, attach the PDF bytes (inline base64) so Gemini still receives the original document.
 - If no structured or extractable data is available, the backend responds with `career_card_missing` so the UI can prompt for a retry/re-upload.
 
 ## Data stored in `career_card_reports`
