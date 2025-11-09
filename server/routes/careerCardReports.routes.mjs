@@ -49,9 +49,64 @@ router.post("/", publicLimiter, async (req, res, next) => {
 });
 
 router.get("/:candidateId", requireAuth(), async (req, res, next) => {
+  const candidateId = req.params.candidateId;
+  const autoEnsure = req.query.ensure !== "false";
+  const forceRefresh =
+    req.query.force === "true" ||
+    req.query.forceRefresh === "true";
   try {
-    const report = await fetchCareerCardReport(req.params.candidateId);
-    if (!report) return res.status(404).json({ error: "report_not_found" });
+    let report = null;
+
+    if (autoEnsure) {
+      try {
+        const ensured = await ensureCareerCardReport({
+          candidateId,
+          forceRefresh,
+        });
+        report = ensured?.report || null;
+        console.info(
+          "[careerCardReports] ensure result",
+          JSON.stringify(
+            {
+              candidateId,
+              status: ensured?.status || "unknown",
+              hasReport: !!report,
+            },
+            null,
+            2
+          )
+        );
+      } catch (err) {
+        const status = err?.status || err?.statusCode || 500;
+        console.warn(
+          "[careerCardReports] ensure failed",
+          JSON.stringify(
+            {
+              candidateId,
+              status,
+              message: err?.message,
+              details: err?.details,
+            },
+            null,
+            2
+          )
+        );
+        if (status !== 404 && status !== 409) {
+          return next(err);
+        }
+        if (status === 409) {
+          return res.status(409).json({ error: err?.message || "career_card_missing" });
+        }
+      }
+    }
+
+    if (!report) {
+      report = await fetchCareerCardReport(candidateId);
+    }
+
+    if (!report) {
+      return res.status(404).json({ error: "report_not_found" });
+    }
     return res.json(report);
   } catch (err) {
     return next(err);
