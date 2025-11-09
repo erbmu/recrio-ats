@@ -79,7 +79,7 @@ export default function CompareView() {
   };
 
   const compareDescription =
-    "Compare candidates side-by-side and let AI highlight who best aligns with the role and company context.";
+    "Compare candidates side-by-side and let AI highlight who best aligns with the role and company context";
 
   const disableOption = (id, other) => other && other === id;
 
