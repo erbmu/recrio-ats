@@ -7,7 +7,7 @@ import { v5 as uuidv5, validate as uuidValidate } from "uuid";
 import { db } from "../db.mjs";
 
 const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();
-const GEMINI_MODEL = (process.env.GEMINI_MODEL || "gemini-1.5-flash-002").trim();
+const GEMINI_MODEL = (process.env.GEMINI_MODEL || "gemini-2.0-flash-exp").trim();
 
 const SUPABASE_URL =
   (process.env.SUPABASE_URL ||

@@ -14,7 +14,7 @@ Configure these in the API process (e.g. `.env` inside `server/`):
 | `GEMINI_API_KEY` | ✅ | Service account key used for Google’s Gemini API. Never expose it to the browser. |
 | `SUPABASE_URL` | ✅ | Base URL for the shared Supabase project (same one the AI simulations already use). |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Service role key for the same Supabase project. Required for read/write access. |
-| `GEMINI_MODEL` | optional | Overrides the default `gemini-1.5-flash-002` model without code changes. |
+| `GEMINI_MODEL` | optional | Overrides the default `gemini-2.0-flash-exp` model without code changes. |
 | `CANDIDATE_NAMESPACE_UUID` | optional | Namespace used when deterministically mapping numeric application IDs to UUIDs. Defaults to `4d9158ab-4720-4f53-9ce0-b4c6b0c8f0b2`. |
 
 ## API surface
