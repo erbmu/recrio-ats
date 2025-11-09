@@ -665,44 +665,44 @@ Provide a comprehensive scoring and feedback.`;
             name: "score_career_card",
             description: "Provide a detailed score and feedback for career card alignment",
             parameters: {
-              type: "object",
+              type: "OBJECT",
               properties: {
                 overallScore: {
-                  type: "number",
+                  type: "NUMBER",
                   description: "Overall alignment score from 0-100",
                 },
                 categoryScores: {
-                  type: "object",
+                  type: "OBJECT",
                   properties: {
                     technicalSkills: {
-                      type: "object",
+                      type: "OBJECT",
                       properties: {
-                        score: { type: "number" },
-                        feedback: { type: "string" },
+                        score: { type: "NUMBER" },
+                        feedback: { type: "STRING" },
                       },
                       required: ["score", "feedback"],
                     },
                     experience: {
-                      type: "object",
+                      type: "OBJECT",
                       properties: {
-                        score: { type: "number" },
-                        feedback: { type: "string" },
+                        score: { type: "NUMBER" },
+                        feedback: { type: "STRING" },
                       },
                       required: ["score", "feedback"],
                     },
                     culturalFit: {
-                      type: "object",
+                      type: "OBJECT",
                       properties: {
-                        score: { type: "number" },
-                        feedback: { type: "string" },
+                        score: { type: "NUMBER" },
+                        feedback: { type: "STRING" },
                       },
                       required: ["score", "feedback"],
                     },
                     projectAlignment: {
-                      type: "object",
+                      type: "OBJECT",
                       properties: {
-                        score: { type: "number" },
-                        feedback: { type: "string" },
+                        score: { type: "NUMBER" },
+                        feedback: { type: "STRING" },
                       },
                       required: ["score", "feedback"],
                     },
@@ -710,28 +710,29 @@ Provide a comprehensive scoring and feedback.`;
                   required: ["technicalSkills", "experience", "culturalFit", "projectAlignment"],
                 },
                 strengths: {
-                  type: "array",
-                  items: { type: "string" },
+                  type: "ARRAY",
+                  items: { type: "STRING" },
                   description: "Key strengths for this role",
                 },
                 improvements: {
-                  type: "array",
-                  items: { type: "string" },
+                  type: "ARRAY",
+                  items: { type: "STRING" },
                   description: "Areas for improvement or gaps",
                 },
                 overallFeedback: {
-                  type: "string",
+                  type: "STRING",
                   description: "Comprehensive summary feedback",
                 },
               },
               required: ["overallScore", "categoryScores", "strengths", "improvements", "overallFeedback"],
-              additionalProperties: false,
             },
           },
         ],
       },
     ],
-    tool_config: { function_call: { name: "score_career_card" } },
+    tool_choice: {
+      function_call: { name: "score_career_card" },
+    },
   };
 
   const resp = await fetch(url.toString(), {
