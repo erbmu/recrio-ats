@@ -730,9 +730,6 @@ Provide a comprehensive scoring and feedback.`;
         ],
       },
     ],
-    tool_config: {
-      function_call: { name: "score_career_card" },
-    },
   };
 
   const resp = await fetch(url.toString(), {
