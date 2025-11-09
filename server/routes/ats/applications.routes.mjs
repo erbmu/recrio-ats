@@ -5,6 +5,7 @@ import { db } from "../../db.mjs";
 import { upload } from "../../middleware/upload.mjs";
 import { requireAuth } from "../../middleware/requireAuth.mjs";
 import fs from "fs";
+import fsp from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import {
@@ -15,6 +16,7 @@ import {
   computeOverallFromReport,
 } from "../../lib/supabaseAnalysis.mjs";
 import { sendSimulationInviteEmail } from "../../lib/renderMail.mjs";
+import { __testables as careerCardTestables } from "../../lib/careerCardReportService.mjs";
 
 /* ------------------------------------------------------------------------- */
 /* Simulation Edge Function config                                            */
@@ -79,6 +81,54 @@ function cleanStr(v, max = 160) {
   return s;
 }
 const emptyToUndef = (v) => (v === "" ? undefined : v);
+
+const { extractTextFromPdfBuffer } = careerCardTestables;
+const MAX_PDF_TEXT_CHARS = 20000;
+const MAX_INLINE_PDF_BYTES = 5 * 1024 * 1024;
+
+const normalizeExtractedText = (text = "") =>
+  text
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\u0000/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+async function buildCareerCardPayloadFromUpload(file) {
+  if (!file || !file.path) return null;
+  try {
+    if (file.mimetype === "application/json") {
+      const raw = await fsp.readFile(file.path, "utf8");
+      return JSON.parse(raw);
+    }
+    if (file.mimetype === "application/pdf") {
+      const buffer = await fsp.readFile(file.path);
+      let text = extractTextFromPdfBuffer(buffer);
+      if (!text) {
+        const fallback = normalizeExtractedText(buffer.toString("utf8"));
+        if (fallback) {
+          text = fallback.slice(0, MAX_PDF_TEXT_CHARS);
+        }
+      }
+      const inlineAllowed = buffer.length <= MAX_INLINE_PDF_BYTES;
+      return {
+        format: text ? "pdf_extracted_text" : "pdf_attachment",
+        filename: file.originalname,
+        mime: file.mimetype,
+        text: text || "PDF text extraction failed automatically; refer to inline data if available.",
+        approx_characters: text ? text.length : null,
+        extracted_at: new Date().toISOString(),
+        size_bytes: Number(file.size || buffer.length),
+        inline_data_base64: inlineAllowed ? buffer.toString("base64") : null,
+        inline_data_truncated: !inlineAllowed,
+      };
+    }
+  } catch (err) {
+    console.warn("[careerCard][ingest] failed to parse upload", err?.message || err);
+  }
+  return null;
+}
 
 const WorkAuthEnum = ["Authorized (no sponsorship)", "Requires sponsorship"];
 const WorkPrefEnum = ["Remote", "Hybrid", "Onsite"];
@@ -219,8 +269,12 @@ r.post(
 
       if (data.website) return res.status(400).json({ field: "website", error: "Rejected" });
 
-      const cc = req.files?.careerCard?.[0] || null;
-      const cv = req.files?.resume?.[0] || null;
+    const cc = req.files?.careerCard?.[0] || null;
+    const cv = req.files?.resume?.[0] || null;
+    let careerCardPayload = null;
+    if (cc) {
+      careerCardPayload = await buildCareerCardPayloadFromUpload(cc);
+    }
 
       const email = data.candidate_email.toLowerCase();
       const ua = req.get("user-agent") || "";
@@ -249,7 +303,7 @@ r.post(
             source: "public_apply",
             ai_scores: null,
             ai_summary: "AI report will appear here after parsing (mock).",
-            career_card: null,
+            career_card: careerCardPayload,
           })
           .returning(["id"]);
         const appId = app.id;
