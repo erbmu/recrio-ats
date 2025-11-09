@@ -8,6 +8,9 @@ const {
   normalizeCategoryScores,
   toStringArray,
   normalizeCandidateIdentifier,
+  extractTextFromPdfBuffer,
+  extractStringsFromPdfBlock,
+  decodePdfEscape,
 } = __testables;
 
 test("stableStringify yields consistent ordering", () => {
@@ -53,4 +56,22 @@ test("normalizeCandidateIdentifier handles numeric and uuid", () => {
   assert.equal(asUuid.applicationId, null);
 
   assert.throws(() => normalizeCandidateIdentifier("not-valid"), /invalid_candidate_id/);
+});
+
+test("decodePdfEscape handles known escapes", () => {
+  assert.equal(decodePdfEscape("n"), "\n");
+  assert.equal(decodePdfEscape("("), "(");
+  assert.equal(decodePdfEscape("x"), "x");
+});
+
+test("extractStringsFromPdfBlock handles nested text", () => {
+  const block = "/F1 12 Tf (Hello) Tj (World \\(test\\)) Tj";
+  const strings = extractStringsFromPdfBlock(block);
+  assert.deepEqual(strings, ["Hello", "World (test)"]);
+});
+
+test("extractTextFromPdfBuffer pulls basic text", () => {
+  const fake = Buffer.from("BT (Line One) Tj ET BT (Line Two) Tj ET", "latin1");
+  const text = extractTextFromPdfBuffer(fake);
+  assert.equal(text, "Line One\nLine Two");
 });

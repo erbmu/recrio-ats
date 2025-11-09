@@ -41,6 +41,8 @@ const REQUIRED_CATEGORY_KEYS = [
   "projectAlignment",
 ];
 
+const MAX_PDF_TEXT_CHARS = 20000;
+
 const ServiceError = (message, status = 500, details) => {
   const err = new Error(message);
   err.status = status;
@@ -154,6 +156,97 @@ async function resolveFilePath(storagePath = "") {
   }
   return null;
 }
+
+const pdfEscapeMap = {
+  n: "\n",
+  r: "\r",
+  t: "\t",
+  b: "\b",
+  f: "\f",
+  "\\": "\\",
+  "(": "(",
+  ")": ")",
+};
+
+const decodePdfEscape = (char) => pdfEscapeMap[char] ?? char ?? "";
+
+const extractStringsFromPdfBlock = (block = "") => {
+  const results = [];
+  let depth = 0;
+  let current = "";
+  let escape = false;
+
+  for (let i = 0; i < block.length; i += 1) {
+    const ch = block[i];
+
+    if (depth > 0) {
+      if (escape) {
+        current += decodePdfEscape(ch);
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === "(") {
+        depth += 1;
+        current += ch;
+        continue;
+      }
+      if (ch === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          results.push(current);
+          current = "";
+          continue;
+        }
+        if (depth < 0) {
+          depth = 0;
+          continue;
+        }
+        current += ch;
+        continue;
+      }
+      current += ch;
+      continue;
+    }
+
+    if (ch === "(") {
+      depth = 1;
+      current = "";
+    }
+  }
+
+  return results;
+};
+
+const normalizeExtractedText = (text = "") =>
+  text
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\u0000/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+const extractTextFromPdfBuffer = (buffer) => {
+  if (!buffer || !buffer.length) return "";
+  const raw = buffer.toString("latin1");
+  const regex = /BT([\s\S]*?)ET/g;
+  const fragments = [];
+  let match;
+  while ((match = regex.exec(raw))) {
+    const block = match[1];
+    const strings = extractStringsFromPdfBlock(block);
+    if (strings.length) {
+      fragments.push(strings.join(" ").trim());
+    }
+  }
+  if (!fragments.length) return "";
+  const combined = normalizeExtractedText(fragments.join("\n"));
+  return combined.slice(0, MAX_PDF_TEXT_CHARS);
+};
 
 async function hasTable(tableName) {
   if (tableName === "candidates" && hasCandidatesTableCache != null) {
@@ -273,21 +366,48 @@ async function getCareerCardData(application) {
     .orderBy("id", "desc")
     .first();
 
-  if (!fileRow || fileRow.mime !== "application/json") return null;
+  if (!fileRow) return null;
 
   const resolved = await resolveFilePath(fileRow.storage_path);
   if (!resolved) return null;
 
-  try {
-    const raw = await fsp.readFile(resolved, "utf8");
-    return JSON.parse(raw);
-  } catch (err) {
-    console.warn("[careerCard] Failed to parse stored JSON file", {
-      path: resolved,
-      error: err?.message || err,
-    });
-    return null;
+  if (fileRow.mime === "application/json") {
+    try {
+      const raw = await fsp.readFile(resolved, "utf8");
+      return JSON.parse(raw);
+    } catch (err) {
+      console.warn("[careerCard] Failed to parse stored JSON file", {
+        path: resolved,
+        error: err?.message || err,
+      });
+      return null;
+    }
   }
+
+  if (fileRow.mime === "application/pdf") {
+    try {
+      const buffer = await fsp.readFile(resolved);
+      const text = extractTextFromPdfBuffer(buffer);
+      if (!text) return null;
+      return {
+        format: "pdf_extracted_text",
+        filename: fileRow.original_name,
+        mime: fileRow.mime,
+        text,
+        approx_characters: text.length,
+        extracted_at: new Date().toISOString(),
+        source_path: fileRow.storage_path,
+      };
+    } catch (err) {
+      console.warn("[careerCard] Failed to extract PDF text", {
+        path: resolved,
+        error: err?.message || err,
+      });
+      return null;
+    }
+  }
+
+  return null;
 }
 
 const cleanText = (value) => {
@@ -661,4 +781,7 @@ export const __testables = {
   normalizeCategoryScores,
   toStringArray,
   normalizeCandidateIdentifier,
+  extractTextFromPdfBuffer,
+  extractStringsFromPdfBlock,
+  decodePdfEscape,
 };

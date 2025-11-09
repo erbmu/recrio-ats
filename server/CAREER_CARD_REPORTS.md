@@ -79,6 +79,14 @@ uuid = uuidv5(
 )
 ```
 
+## Career card ingestion
+
+- If the ATS application already populates `applications.career_card` with structured JSON, that blob is used verbatim.
+- Otherwise we read the latest uploaded `career_card` file:
+  * `.json` uploads are parsed directly.
+  * `.pdf` uploads are processed server-side (no external dependencies) by extracting readable text from the PDF streams. The text is wrapped in a JSON payload (`{ format: "pdf_extracted_text", text: "…" }`) so hashing/caching still behaves consistently.
+- If no structured or extractable data is available, the backend responds with `career_card_missing` so the UI can prompt for a retry/re-upload.
+
 ## Data stored in `career_card_reports`
 
 | Column | Notes |
