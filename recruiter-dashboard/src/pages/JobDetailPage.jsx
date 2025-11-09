@@ -128,7 +128,7 @@ export default function JobDetailPage() {
               <tr>
                 <th className="px-4 py-3 text-left font-medium">Rank</th>
                 <th className="px-4 py-3 text-left font-medium">Name</th>
-                <th className="px-4 py-3 text-left font-medium">AI Score</th>
+                <th className="px-4 py-3 text-left font-medium">Overall AI Score</th>
                 <th className="px-4 py-3 text-left font-medium">Actions</th>
               </tr>
             </thead>

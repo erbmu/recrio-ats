@@ -94,8 +94,12 @@ export default function ApplicantReportPage() {
 
   const analysisReport = app?.analysis_report || null;
   const analysisGeneratedAt = app?.analysis_generated_at || null;
+  const overallComposite = app?.overall_score ?? null;
   const analysisOverall =
-    app?.analysis_overall_score ?? analysisReport?.overallStartupReadinessIndex ?? null;
+    overallComposite ??
+    app?.analysis_overall_score ??
+    analysisReport?.overallStartupReadinessIndex ??
+    null;
   const overallScore = toDisplayScore(analysisOverall);
 
   const recommendation = React.useMemo(() => {
@@ -322,7 +326,8 @@ export default function ApplicantReportPage() {
             </div>
           )}
 
-          <div className="bg-white border border-gray-200 rounded-lg p-6 mb-10 shadow-sm">
+          <div className="space-y-10">
+          <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
             <h2 className="text-lg font-semibold text-gray-800 mb-4">Candidate Details</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
               <div><span className="text-gray-500">Name:</span> {app.candidate_name || "—"}</div>
@@ -434,7 +439,7 @@ export default function ApplicantReportPage() {
               <div>
                 <h2 className="text-lg font-semibold text-gray-800">Career Card Scoring</h2>
                 <p className="text-sm text-gray-500">
-                  Gemini alignment score cached in Supabase so it is only generated once per card.
+                  Evaluates how well the candidate’s background aligns with the role requirements and company story.
                 </p>
               </div>
               {careerReportSummary?.generated_at && (
@@ -633,6 +638,7 @@ export default function ApplicantReportPage() {
               </ul>
             </div>
           )}
+          </div>
         </>
       )}
     </div>
