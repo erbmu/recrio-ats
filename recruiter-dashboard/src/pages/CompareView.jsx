@@ -87,6 +87,13 @@ export default function CompareView() {
   const parsedReport = React.useMemo(() => {
     const report = status.result?.report;
     if (!report) return null;
+    const candidateALabel = status.result?.candidates?.a?.name || "Candidate A";
+    const candidateBLabel = status.result?.candidates?.b?.name || "Candidate B";
+    const replaceLabels = (text = "") =>
+      text
+        .replace(/Candidate A/gi, candidateALabel)
+        .replace(/Candidate B/gi, candidateBLabel);
+
     const lines = report
       .split(/\n+/)
       .map((line) => line.trim())
@@ -140,13 +147,13 @@ export default function CompareView() {
         if (candidateMatch) {
           const label =
             candidateMatch[1].toLowerCase() === "candidate a"
-              ? candidateLabels.aName
-              : candidateLabels.bName;
+              ? candidateALabel
+              : candidateBLabel;
           return [
             {
               type: "candidate",
               label,
-              text: paragraph.replace(candidateMatch[1], label).replace(/^[-*]\s*/, ""),
+              text: replaceLabels(paragraph.replace(candidateMatch[1], label).replace(/^[-*]\s*/, "")),
             },
           ];
         }
@@ -155,14 +162,9 @@ export default function CompareView() {
           .map((item) => item.trim())
           .filter(Boolean);
         if (items.length > 1) {
-          return [{ type: "list", items: items.map((item) => item
-            .replace(/Candidate A/gi, candidateLabels.aName)
-            .replace(/Candidate B/gi, candidateLabels.bName)) }];
+          return [{ type: "list", items: items.map((item) => replaceLabels(item)) }];
         }
-        const normalized = paragraph
-          .replace(/Candidate A/gi, candidateLabels.aName)
-          .replace(/Candidate B/gi, candidateLabels.bName);
-        return [{ type: "text", text: normalized }];
+        return [{ type: "text", text: replaceLabels(paragraph) }];
       });
     };
 
@@ -171,14 +173,10 @@ export default function CompareView() {
       content: decorateContent(section.content),
     }));
 
-    const normalizedRecommendation = recommendation
-      ? recommendation
-          .replace(/Candidate A/gi, candidateLabels.aName)
-          .replace(/Candidate B/gi, candidateLabels.bName)
-      : "";
+    const normalizedRecommendation = replaceLabels(recommendation);
 
     return { sections, recommendation: normalizedRecommendation };
-  }, [status.result, candidateLabels]);
+  }, [status.result]);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
