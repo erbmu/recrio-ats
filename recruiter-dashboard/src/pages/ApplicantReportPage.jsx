@@ -161,14 +161,13 @@ export default function ApplicantReportPage() {
     const candidates = [
       app?.analysis_overall_score,
       analysisReport?.overallStartupReadinessIndex,
-      app?.ai_scores?.overall ?? app?.ai_scores?.score ?? null,
     ];
     for (const val of candidates) {
       const num = clampScore(val);
       if (num != null) return num;
     }
     return null;
-  }, [app?.analysis_overall_score, analysisReport?.overallStartupReadinessIndex, app?.ai_scores]);
+  }, [app?.analysis_overall_score, analysisReport?.overallStartupReadinessIndex]);
 
   const careerCardScoreRaw = React.useMemo(() => {
     const raw = careerReportSummary?.overall ?? null;

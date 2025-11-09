@@ -564,9 +564,7 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
         const nAnalysis = typeof analysisOverall === "number" ? analysisOverall : Number(analysisOverall);
         if (Number.isFinite(nAnalysis)) return nAnalysis;
       }
-      const v = a?.ai_scores?.overall ?? a?.ai_scores?.score ?? null;
-      const n = typeof v === "number" ? v : Number(v);
-      return Number.isFinite(n) ? n : null;
+      return null;
     };
 
     for (const app of apps) {
@@ -581,11 +579,7 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
       app.career_card_generated_at = careerReport?.generated_at || null;
       app.overall_score = combinedScore;
       app.overall_confidence = confidence;
-      app.simulation_completed = Boolean(
-        app.simulation_score != null ||
-        app.analysis_generated_at ||
-        (app.sim_status && String(app.sim_status).toLowerCase() === "ready")
-      );
+      app.simulation_completed = Boolean(app.analysis_overall_score);
     }
 
     apps.sort((a, b) => {
