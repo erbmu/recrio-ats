@@ -192,23 +192,43 @@ export default function CompareView() {
         )}
 
         {status.result && (
-          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-4">
-            <div className="flex flex-col gap-2">
+          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-6">
+            <div className="flex flex-col gap-1">
               <h2 className="text-lg font-semibold text-gray-900">AI Comparison Report</h2>
-              <p className="text-sm text-gray-500">
-                Job: {status.result.job?.title || "Selected role"}
-              </p>
+              <p className="text-sm text-gray-500">Job: {status.result.job?.title || "Selected role"}</p>
             </div>
-            <div className="prose max-w-none text-gray-800">
+            <article className="space-y-4 text-sm text-gray-800 leading-relaxed">
               {status.result.report
-                .split(/\n{2,}/)
+                .split(/(\*\*[^*]+\*\*)/g)
                 .filter(Boolean)
-                .map((paragraph, idx) => (
-                  <p key={idx} className="text-sm leading-relaxed">
-                    {paragraph}
-                  </p>
-                ))}
-            </div>
+                .map((segment, idx) => {
+                  if (/^\*\*.+\*\*$/.test(segment)) {
+                    return (
+                      <h3 key={idx} className="text-base font-semibold text-gray-900 mt-6">
+                        {segment.replace(/\*\*/g, "")}
+                      </h3>
+                    );
+                  }
+                  const listItems = segment
+                    .split(/-\s+/)
+                    .map((line) => line.trim())
+                    .filter((line) => line);
+                  if (listItems.length > 1) {
+                    return (
+                      <ul key={idx} className="ml-4 list-disc space-y-1">
+                        {listItems.map((line, i) => (
+                          <li key={i}>{line}</li>
+                        ))}
+                      </ul>
+                    );
+                  }
+                  return (
+                    <p key={idx} className="whitespace-pre-line">
+                      {segment}
+                    </p>
+                  );
+                })}
+            </article>
           </div>
         )}
     </div>

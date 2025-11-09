@@ -134,21 +134,38 @@ router.post("/analyze", requireAuth(), async (req, res, next) => {
     }
 
     const prompt = `
-You are an expert technical recruiter and hiring analyst for Recrio. Compare two candidates using the structured data below.
+You are an expert technical recruiter and hiring analyst for Recrio, tasked with evaluating candidates using AI-generated simulation reports and career card reports.
 
-Job Title: ${job.title}
-Job Description: ${job.description || "(not provided)"}
-Company Description: ${job.company_description || "(not provided)"}
+You will receive:
+- Job Title: ${job.title}
+- Job Description: ${job.description || "(not provided)"}
+- Company Description: ${job.company_description || "(not provided)"}
 
 Candidate A (${candidateA.name}):
-- Simulation Report: ${candidateA.simulationReport ? stringifySafe(candidateA.simulationReport.analysis_report ?? candidateA.simulationReport) : "Missing"}
-- Career Card Report: ${candidateA.careerCardReport ? stringifySafe(candidateA.careerCardReport.raw_report ?? candidateA.careerCardReport) : "Missing"}
+Simulation Report => ${candidateA.simulationReport ? stringifySafe(candidateA.simulationReport.analysis_report ?? candidateA.simulationReport) : "Missing"}
+Career Card Report => ${candidateA.careerCardReport ? stringifySafe(candidateA.careerCardReport.raw_report ?? candidateA.careerCardReport) : "Missing"}
 
 Candidate B (${candidateB.name}):
-- Simulation Report: ${candidateB.simulationReport ? stringifySafe(candidateB.simulationReport.analysis_report ?? candidateB.simulationReport) : "Missing"}
-- Career Card Report: ${candidateB.careerCardReport ? stringifySafe(candidateB.careerCardReport.raw_report ?? candidateB.careerCardReport) : "Missing"}
+Simulation Report => ${candidateB.simulationReport ? stringifySafe(candidateB.simulationReport.analysis_report ?? candidateB.simulationReport) : "Missing"}
+Career Card Report => ${candidateB.careerCardReport ? stringifySafe(candidateB.careerCardReport.raw_report ?? candidateB.careerCardReport) : "Missing"}
 
 ${req.body?.customInstructions || ""}
+
+=== Guidelines ===
+• If a report is missing, note it explicitly.
+• Compare candidates across relevant dimensions: technical execution, communication, problem-solving, domain fit, cultural or startup fit, etc.
+• Highlight clear strengths/risks for each candidate.
+• End with a verdict that chooses the stronger candidate (or "Insufficient data" if neither has usable data).
+
+=== Output Format ===
+- Overview: {summary}
+- Strengths & Risks:
+  - Candidate A: {bullets}
+  - Candidate B: {bullets}
+- Comparative Analysis: {brief paragraphs}
+- Final Verdict: {clear recommendation sentence}
+
+Finish with “Recommended: Candidate A” or “Recommended: Candidate B” (or “Insufficient data to decide”).
 `.trim();
 
     const body = {
