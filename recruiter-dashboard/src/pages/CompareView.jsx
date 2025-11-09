@@ -84,6 +84,54 @@ export default function CompareView() {
   const disableOption = (id, other) => other && other === id;
 
   const emptyState = !loadingJobs && jobs.length === 0;
+  const parsedReport = React.useMemo(() => {
+    if (!status.result?.report) return null;
+    const raw = status.result.report
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const sectionTitles = [
+      "Overview",
+      "Strengths & Risks",
+      "Comparative Analysis",
+      "Final Verdict",
+    ];
+    const sections = [];
+    let current = null;
+    const startSection = (title) => {
+      const normalized = sectionTitles.find(
+        (t) => t.toLowerCase() === title.toLowerCase()
+      );
+      const section = {
+        title: normalized || title || "Overview",
+        content: [],
+      };
+      sections.push(section);
+      return section;
+    };
+    for (const line of raw) {
+      const match = line.match(
+        /^[-*]?\s*(Overview|Strengths & Risks|Comparative Analysis|Final Verdict)\s*:?/i
+      );
+      if (match) {
+        current = startSection(match[1]);
+        const remaining = line.slice(match[0].length).trim();
+        if (remaining) current.content.push(remaining);
+      } else if (line.match(/^[-*]?\s*Recommended:/i)) {
+        continue;
+      } else {
+        if (!current) current = startSection("Overview");
+        current.content.push(line);
+      }
+    }
+    const recommendationLine = raw.find((line) =>
+      /Recommended:/i.test(line)
+    );
+    const recommendation = recommendationLine
+      ? recommendationLine.replace(/^[-*]?\s*Recommended:\s*/i, "").trim()
+      : "";
+    return { sections, recommendation };
+  }, [status.result]);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -191,44 +239,61 @@ export default function CompareView() {
           </>
         )}
 
-        {status.result && (
+        {parsedReport && (
           <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-6">
             <div className="flex flex-col gap-1">
               <h2 className="text-lg font-semibold text-gray-900">AI Comparison Report</h2>
               <p className="text-sm text-gray-500">Job: {status.result.job?.title || "Selected role"}</p>
             </div>
-            <article className="space-y-4 text-sm text-gray-800 leading-relaxed">
-              {status.result.report
-                .split(/(\*\*[^*]+\*\*)/g)
-                .filter(Boolean)
-                .map((segment, idx) => {
-                  if (/^\*\*.+\*\*$/.test(segment)) {
-                    return (
-                      <h3 key={idx} className="text-base font-semibold text-gray-900 mt-6">
-                        {segment.replace(/\*\*/g, "")}
-                      </h3>
-                    );
-                  }
-                  const listItems = segment
-                    .split(/-\s+/)
-                    .map((line) => line.trim())
-                    .filter((line) => line);
-                  if (listItems.length > 1) {
-                    return (
-                      <ul key={idx} className="ml-4 list-disc space-y-1">
-                        {listItems.map((line, i) => (
-                          <li key={i}>{line}</li>
-                        ))}
-                      </ul>
-                    );
-                  }
-                  return (
-                    <p key={idx} className="whitespace-pre-line">
-                      {segment}
-                    </p>
-                  );
-                })}
-            </article>
+            <div className="grid gap-4">
+              {parsedReport.sections.map((section) => (
+                <section
+                  key={section.title}
+                  className={`rounded-2xl border px-4 py-3 ${
+                    section.title === "Final Verdict"
+                      ? "border-emerald-200 bg-emerald-50"
+                      : "border-gray-100 bg-gray-50"
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                    {section.title}
+                    {section.title === "Final Verdict" && (
+                      <span className="inline-flex h-6 items-center rounded-full bg-emerald-100 px-2 text-xs font-medium text-emerald-800">
+                        Verdict
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2 space-y-2 text-sm text-gray-700 leading-relaxed">
+                    {section.content.map((paragraph, idx) => {
+                      const bullets = paragraph
+                        .split(/-\s+/)
+                        .map((line) => line.trim())
+                        .filter((line) => line);
+                      if (bullets.length > 1) {
+                        return (
+                          <ul key={idx} className="ml-4 list-disc space-y-1">
+                            {bullets.map((line, i) => (
+                              <li key={i}>{line}</li>
+                            ))}
+                          </ul>
+                        );
+                      }
+                      return (
+                        <p key={idx} className="whitespace-pre-line">
+                          {paragraph}
+                        </p>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+            {parsedReport.recommendation && (
+              <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 text-white">
+                <div className="text-sm uppercase tracking-wide text-gray-300">Recommended</div>
+                <div className="text-lg font-semibold">{parsedReport.recommendation}</div>
+              </div>
+            )}
           </div>
         )}
     </div>
