@@ -291,7 +291,15 @@ export default function CompareView() {
               <p className="text-sm text-gray-500">Job: {status.result.job?.title || "Selected role"}</p>
             </div>
             <div className="grid gap-4">
-              {parsedReport.sections.map((section) => (
+              {parsedReport.sections
+                .filter((section) =>
+                  section.content.some((block) =>
+                    block.type === "list"
+                      ? block.items.length > 0
+                      : Boolean(block.text && block.text.trim())
+                  )
+                )
+                .map((section) => (
                 <section
                   key={section.title}
                   className={`rounded-2xl border px-4 py-4 space-y-3 ${
@@ -311,8 +319,9 @@ export default function CompareView() {
                   <div className="space-y-3 text-sm text-gray-700 leading-relaxed">
                     {section.content.map((block, idx) => {
                       if (block.type === "candidate") {
+                        const primary = status.result?.candidates?.a?.name || "Candidate A";
                         const badgeColor =
-                          block.label === (status.result?.candidates?.a?.name || "Candidate A")
+                          block.label === primary
                             ? "bg-gray-900 text-white"
                             : "bg-gray-200 text-gray-900";
                         return (
@@ -325,7 +334,12 @@ export default function CompareView() {
                             >
                               {block.label}
                             </div>
-                            <p className="mt-2 text-gray-800">{block.text}</p>
+                            <p
+                              className="mt-2 text-gray-800"
+                              dangerouslySetInnerHTML={{
+                                __html: block.text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>"),
+                              }}
+                            />
                           </div>
                         );
                       }
