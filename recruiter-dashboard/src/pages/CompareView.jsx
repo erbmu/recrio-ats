@@ -138,11 +138,15 @@ export default function CompareView() {
           /(Candidate [AB])\s*:\s*(.*)/i
         );
         if (candidateMatch) {
+          const label =
+            candidateMatch[1].toLowerCase() === "candidate a"
+              ? candidateLabels.aName
+              : candidateLabels.bName;
           return [
             {
               type: "candidate",
-              label: candidateMatch[1],
-              text: candidateMatch[2].trim(),
+              label,
+              text: paragraph.replace(candidateMatch[1], label).replace(/^[-*]\s*/, ""),
             },
           ];
         }
@@ -151,9 +155,14 @@ export default function CompareView() {
           .map((item) => item.trim())
           .filter(Boolean);
         if (items.length > 1) {
-          return [{ type: "list", items }];
+          return [{ type: "list", items: items.map((item) => item
+            .replace(/Candidate A/gi, candidateLabels.aName)
+            .replace(/Candidate B/gi, candidateLabels.bName)) }];
         }
-        return [{ type: "text", text: paragraph }];
+        const normalized = paragraph
+          .replace(/Candidate A/gi, candidateLabels.aName)
+          .replace(/Candidate B/gi, candidateLabels.bName);
+        return [{ type: "text", text: normalized }];
       });
     };
 
@@ -162,8 +171,14 @@ export default function CompareView() {
       content: decorateContent(section.content),
     }));
 
-    return { sections, recommendation };
-  }, [status.result]);
+    const normalizedRecommendation = recommendation
+      ? recommendation
+          .replace(/Candidate A/gi, candidateLabels.aName)
+          .replace(/Candidate B/gi, candidateLabels.bName)
+      : "";
+
+    return { sections, recommendation: normalizedRecommendation };
+  }, [status.result, candidateLabels]);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">

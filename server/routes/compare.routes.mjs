@@ -134,38 +134,37 @@ router.post("/analyze", requireAuth(), async (req, res, next) => {
     }
 
     const prompt = `
-You are an expert technical recruiter and hiring analyst for Recrio, tasked with evaluating candidates using AI-generated simulation reports and career card reports.
+You are an expert technical recruiter and hiring analyst for Recrio. Compare two candidates using the structured data below. Refer to them by name (not "Candidate A/B").
 
-You will receive:
-- Job Title: ${job.title}
-- Job Description: ${job.description || "(not provided)"}
-- Company Description: ${job.company_description || "(not provided)"}
+Role: ${job.title}
+Job Description: ${job.description || "(not provided)"}
+Company Description: ${job.company_description || "(not provided)"}
 
-Candidate A (${candidateA.name}):
-Simulation Report => ${candidateA.simulationReport ? stringifySafe(candidateA.simulationReport.analysis_report ?? candidateA.simulationReport) : "Missing"}
-Career Card Report => ${candidateA.careerCardReport ? stringifySafe(candidateA.careerCardReport.raw_report ?? candidateA.careerCardReport) : "Missing"}
+Candidate ${candidateA.name}:
+- Simulation Report: ${candidateA.simulationReport ? stringifySafe(candidateA.simulationReport.analysis_report ?? candidateA.simulationReport) : "Missing"}
+- Career Card Report: ${candidateA.careerCardReport ? stringifySafe(candidateA.careerCardReport.raw_report ?? candidateA.careerCardReport) : "Missing"}
 
-Candidate B (${candidateB.name}):
-Simulation Report => ${candidateB.simulationReport ? stringifySafe(candidateB.simulationReport.analysis_report ?? candidateB.simulationReport) : "Missing"}
-Career Card Report => ${candidateB.careerCardReport ? stringifySafe(candidateB.careerCardReport.raw_report ?? candidateB.careerCardReport) : "Missing"}
+Candidate ${candidateB.name}:
+- Simulation Report: ${candidateB.simulationReport ? stringifySafe(candidateB.simulationReport.analysis_report ?? candidateB.simulationReport) : "Missing"}
+- Career Card Report: ${candidateB.careerCardReport ? stringifySafe(candidateB.careerCardReport.raw_report ?? candidateB.careerCardReport) : "Missing"}
 
 ${req.body?.customInstructions || ""}
 
 === Guidelines ===
-• If a report is missing, note it explicitly.
-• Compare candidates across relevant dimensions: technical execution, communication, problem-solving, domain fit, cultural or startup fit, etc.
-• Highlight clear strengths/risks for each candidate.
-• End with a verdict that chooses the stronger candidate (or "Insufficient data" if neither has usable data).
+• Explicitly mention when a report is missing for a candidate.
+• Compare them across relevant dimensions: technical execution, communication, problem-solving, domain/role fit, growth potential, etc.
+• Highlight the top strengths and risks for each named candidate.
+• Make a clear, evidence-based recommendation naming the stronger candidate (or note if data is insufficient).
 
 === Output Format ===
-- Overview: {summary}
+- Overview: {summary referencing both names}
 - Strengths & Risks:
-  - Candidate A: {bullets}
-  - Candidate B: {bullets}
-- Comparative Analysis: {brief paragraphs}
-- Final Verdict: {clear recommendation sentence}
+  - ${candidateA.name}: {bullets or short sentences}
+  - ${candidateB.name}: {bullets or short sentences}
+- Comparative Analysis: {brief paragraphs comparing the two}
+- Final Verdict: {clear sentence naming the recommended candidate and why}
 
-Finish with “Recommended: Candidate A” or “Recommended: Candidate B” (or “Insufficient data to decide”).
+End with “Recommended: ${candidateA.name}” or “Recommended: ${candidateB.name}” (or “Recommended: Insufficient data to decide” if truly necessary).
 `.trim();
 
     const body = {
