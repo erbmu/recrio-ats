@@ -300,7 +300,7 @@ const baseApplicationQuery = () =>
       "o.id as org_id",
       "o.name as company_name",
       "o.company_description",
-      "o.description as org_description"
+      db.raw("o.company_description as org_description")
     );
 
 async function fetchApplicationForCandidate({ applicationId, supabaseId }) {
@@ -332,7 +332,7 @@ async function fetchApplicationForCandidate({ applicationId, supabaseId }) {
         "o.id as org_id",
         "o.name as company_name",
         "o.company_description",
-        "o.description as org_description"
+        db.raw("o.company_description as org_description")
       )
       .first();
     if (row) return row;
