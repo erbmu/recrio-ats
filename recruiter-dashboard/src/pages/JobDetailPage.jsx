@@ -16,6 +16,7 @@ const toPercentScore = (value) => {
 
 const getScoreValue = (row) => {
   const sources = [
+    row?.overall_score,
     row?.analysis_overall_score,
     row?.ai_score,
     row?.ai_scores?.overall ?? row?.ai_scores?.score,

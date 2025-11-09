@@ -51,6 +51,8 @@ const ServiceError = (message, status = 500, details) => {
   return err;
 };
 
+const hasSupabaseConfig = () => Boolean(SUPABASE_REST_BASE && SUPABASE_SERVICE_ROLE_KEY);
+
 const ensureSupabaseConfig = () => {
   if (!SUPABASE_REST_BASE || !SUPABASE_SERVICE_ROLE_KEY) {
     throw ServiceError("supabase_config_missing", 500, {
@@ -856,3 +858,91 @@ export const __testables = {
   extractStringsFromPdfBlock,
   decodePdfEscape,
 };
+
+const roundScore = (value) => {
+  if (value == null) return null;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Math.max(0, Math.min(100, Number(num.toFixed(2))));
+};
+
+export function calculateOverallScore(simulationScore, careerCardScore) {
+  const ws = 0.7;
+  const wc = 0.3;
+  const Is = simulationScore != null && Number.isFinite(Number(simulationScore)) ? 1 : 0;
+  const Ic = careerCardScore != null && Number.isFinite(Number(careerCardScore)) ? 1 : 0;
+  const denom = Is * ws + Ic * wc;
+  if (denom === 0) return { score: null, confidence: 0 };
+
+  const toNumber = (value) => {
+    if (value == null) return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const f = (x, gamma) => {
+    const num = Math.max(0, Math.min(100, x ?? 0));
+    return 100 * Math.pow(num / 100, gamma);
+  };
+
+  const sim = toNumber(simulationScore);
+  const cc = toNumber(careerCardScore);
+
+  const numerator =
+    (Is ? ws * f(sim ?? 0, 1.1) : 0) +
+    (Ic ? wc * f(cc ?? 0, 1.0) : 0);
+
+  const score = numerator / denom;
+  const confidence = denom / (ws + wc);
+
+  return {
+    score: roundScore(score),
+    confidence: Number(confidence.toFixed(4)),
+  };
+}
+
+export async function fetchCareerCardReportsBulk({ applicationIds = [] } = {}) {
+  if (!hasSupabaseConfig() || !Array.isArray(applicationIds) || !applicationIds.length) {
+    return new Map();
+  }
+  const map = new Map();
+  const supabaseIds = [];
+  const appIdBySup = new Map();
+
+  for (const appId of applicationIds) {
+    const identifiers = normalizeCandidateIdentifier(appId);
+    supabaseIds.push(identifiers.supabaseId);
+    appIdBySup.set(identifiers.supabaseId, String(appId));
+  }
+
+  try {
+    const url = new URL(`${SUPABASE_REST_BASE}/${SUPABASE_TABLE}`);
+    url.searchParams.set("select", "*");
+    if (supabaseIds.length === 1) {
+      url.searchParams.set("candidate_id", `eq.${supabaseIds[0]}`);
+    } else {
+      url.searchParams.set("candidate_id", `in.(${supabaseIds.join(",")})`);
+    }
+    url.searchParams.set("limit", String(supabaseIds.length));
+
+    const resp = await fetch(url.toString(), {
+      method: "GET",
+      headers: supabaseHeaders(),
+    });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      throw new Error(`supabase_fetch_failed ${resp.status} ${body}`);
+    }
+    const rows = await resp.json();
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const normalized = normalizeSupabaseRow(row);
+      if (!normalized?.candidate_id) continue;
+      const appKey = appIdBySup.get(normalized.candidate_id);
+      if (!appKey) continue;
+      map.set(appKey, normalized);
+    }
+  } catch (err) {
+    console.warn("[careerCardReports] bulk fetch failed", err?.message || err);
+  }
+  return map;
+}

@@ -16,7 +16,11 @@ import {
   computeOverallFromReport,
 } from "../../lib/supabaseAnalysis.mjs";
 import { sendSimulationInviteEmail } from "../../lib/renderMail.mjs";
-import { __testables as careerCardTestables } from "../../lib/careerCardReportService.mjs";
+import {
+  __testables as careerCardTestables,
+  fetchCareerCardReportsBulk,
+  calculateOverallScore,
+} from "../../lib/careerCardReportService.mjs";
 
 /* ------------------------------------------------------------------------- */
 /* Simulation Edge Function config                                            */
@@ -530,7 +534,11 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
       app.analysis_generated_at = sup?.analysis_generated_at ?? null;
     }
 
-    const parseOverall = (a) => {
+    const careerCardReports = await fetchCareerCardReportsBulk({
+      applicationIds: apps.map((a) => a.id),
+    });
+
+    const parseSimulationScore = (a) => {
       const analysisOverall = a?.analysis_overall_score;
       if (analysisOverall != null) {
         const nAnalysis = typeof analysisOverall === "number" ? analysisOverall : Number(analysisOverall);
@@ -541,9 +549,23 @@ r.get("/job/:jobId", requireAuth(), async (req, res, next) => {
       return Number.isFinite(n) ? n : null;
     };
 
+    for (const app of apps) {
+      const simScore = parseSimulationScore(app);
+      const careerReport = careerCardReports.get(String(app.id));
+      const careerScore =
+        careerReport?.overall_score != null ? Number(careerReport.overall_score) : null;
+      const { score: combinedScore, confidence } = calculateOverallScore(simScore, careerScore);
+
+      app.simulation_score = simScore != null && Number.isFinite(Number(simScore)) ? Number(simScore) : null;
+      app.career_card_score = careerScore != null && Number.isFinite(careerScore) ? careerScore : null;
+      app.career_card_generated_at = careerReport?.generated_at || null;
+      app.overall_score = combinedScore;
+      app.overall_confidence = confidence;
+    }
+
     apps.sort((a, b) => {
-      const sa = parseOverall(a);
-      const sb = parseOverall(b);
+      const sa = a.overall_score;
+      const sb = b.overall_score;
       if (sa == null && sb == null) return new Date(b.created_at) - new Date(a.created_at);
       if (sa == null) return 1;
       if (sb == null) return -1;
