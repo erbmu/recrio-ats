@@ -294,7 +294,7 @@ export default function CompareView() {
               {parsedReport.sections.map((section) => (
                 <section
                   key={section.title}
-                  className={`rounded-2xl border px-4 py-3 space-y-2 ${
+                  className={`rounded-2xl border px-4 py-4 space-y-3 ${
                     section.title === "Final Verdict"
                       ? "border-emerald-200 bg-emerald-50"
                       : "border-gray-100 bg-gray-50"
@@ -308,40 +308,51 @@ export default function CompareView() {
                       </span>
                     )}
                   </div>
-                  <div className="space-y-2 text-sm text-gray-700 leading-relaxed">
+                  <div className="space-y-3 text-sm text-gray-700 leading-relaxed">
                     {section.content.map((block, idx) => {
                       if (block.type === "candidate") {
                         const badgeColor =
-                          block.label.toLowerCase().includes("a")
+                          block.label === (status.result?.candidates?.a?.name || "Candidate A")
                             ? "bg-gray-900 text-white"
                             : "bg-gray-200 text-gray-900";
                         return (
                           <div
                             key={idx}
-                            className="rounded-xl border border-gray-200 bg-white px-3 py-2"
+                            className="rounded-xl border border-white/60 bg-white px-4 py-3 shadow-sm"
                           >
                             <div
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${badgeColor}`}
+                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${badgeColor}`}
                             >
                               {block.label}
                             </div>
-                            <p className="mt-1 text-gray-700">{block.text}</p>
+                            <p className="mt-2 text-gray-800">{block.text}</p>
                           </div>
                         );
                       }
                       if (block.type === "list") {
                         return (
                           <ul key={idx} className="ml-4 list-disc space-y-1">
-                            {block.items.map((item, i) => (
-                              <li key={i}>{item}</li>
-                            ))}
+                            {block.items.map((item, i) => {
+                              const highlighted = item.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+                              return (
+                                <li
+                                  key={i}
+                                  className="text-gray-700"
+                                  dangerouslySetInnerHTML={{ __html: highlighted }}
+                                />
+                              );
+                            })}
                           </ul>
                         );
                       }
                       return (
-                        <p key={idx} className="whitespace-pre-line">
-                          {block.text}
-                        </p>
+                        <p
+                          key={idx}
+                          className="whitespace-pre-line"
+                          dangerouslySetInnerHTML={{
+                            __html: block.text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>"),
+                          }}
+                        />
                       );
                     })}
                   </div>
