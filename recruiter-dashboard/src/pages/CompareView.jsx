@@ -317,7 +317,7 @@ export default function CompareView() {
               <p className="text-sm text-gray-500">Job: {status.result.job?.title || "Selected role"}</p>
             </div>
             <div className="grid gap-4">
-              {(Array.isArray(parsedReport.sections) ? parsedReport.sections : [])
+              {(parsedReport.sections || [])
                 .filter((section) =>
                   (section?.content || []).some((block) =>
                     block?.type === "list"
