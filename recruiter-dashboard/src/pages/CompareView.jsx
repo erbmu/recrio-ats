@@ -86,9 +86,12 @@ export default function CompareView() {
       });
       setStatus({ loading: false, error: "", result: data });
     } catch (err) {
+      const friendlyError = stringOrJson(
+        err?.__debug?.body || err?.message || "Comparison failed."
+      );
       setStatus({
         loading: false,
-        error: err?.__debug?.body || err.message || "Comparison failed.",
+        error: friendlyError,
         result: null,
       });
     }
@@ -303,7 +306,7 @@ export default function CompareView() {
             </button>
           </div>
           {status.error && (
-            <p className="mt-3 text-sm text-red-600">{status.error}</p>
+            <p className="mt-3 text-sm text-red-600">{stringOrJson(status.error)}</p>
           )}
         </div>
 
