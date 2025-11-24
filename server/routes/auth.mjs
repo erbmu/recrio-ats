@@ -148,17 +148,49 @@ router.post("/signup", async (req, res) => {
         orgId = createdOrg.id;
       }
 
-      await tx.users.create({
-        data: {
-          org_id: orgId,
-          email: emailNorm,
-          name: fullName,
-          password_hash: passwordHash,
-          role: invite.role || "recruiter",
-          recruiter_type: recruiterTypeNorm,
-          is_active: true,
-        },
-      });
+      const baseUserData = {
+        org_id: orgId,
+        email: emailNorm,
+        name: fullName,
+        password_hash: passwordHash,
+        role: invite.role || "recruiter",
+        is_active: true,
+      };
+
+      let createdUserId = null;
+      let recruiterTypePersisted = false;
+      const unknownRecruiterField = (err) =>
+        err?.message?.includes?.("Unknown argument `recruiter_type`") ||
+        err?.message?.includes?.("Unknown field `recruiter_type`");
+
+      try {
+        const created = await tx.users.create({
+          data: { ...baseUserData, recruiter_type: recruiterTypeNorm },
+          select: { id: true },
+        });
+        createdUserId = created?.id;
+        recruiterTypePersisted = true;
+      } catch (err) {
+        if (!unknownRecruiterField(err)) throw err;
+        const created = await tx.users.create({
+          data: baseUserData,
+          select: { id: true },
+        });
+        createdUserId = created?.id;
+        recruiterTypePersisted = false;
+      }
+
+      if (createdUserId && !recruiterTypePersisted) {
+        try {
+          await tx.$executeRawUnsafe(
+            "UPDATE users SET recruiter_type = $1 WHERE id = $2",
+            recruiterTypeNorm,
+            createdUserId
+          );
+        } catch (err) {
+          console.warn("[signup] recruiter_type backfill failed", err?.message || err);
+        }
+      }
 
       const updateData = {
         uses: { increment: 1 },
