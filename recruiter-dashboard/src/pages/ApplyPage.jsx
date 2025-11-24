@@ -598,6 +598,18 @@ export default function ApplyPage() {
 
               <section className="p-6 md:p-8">
                 <h3 className="text-sm font-semibold text-zinc-900">Documents</h3>
+                <p className="mt-2 text-sm text-zinc-600">
+                  Need a Career Card?{" "}
+                  <a
+                    href="http://careercard.recrio-ai.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-zinc-900 underline-offset-2 hover:underline"
+                  >
+                    Create yours in a couple of minutes
+                  </a>{" "}
+                  before uploading below.
+                </p>
 
                 <div className="mt-4 space-y-4">
                   <div
