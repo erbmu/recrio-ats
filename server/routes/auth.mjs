@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { PrismaClient } from "@prisma/client";
 import { auth } from "../middleware/auth.mjs";
+import { db } from "../db.mjs";
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -201,10 +202,19 @@ router.get("/me", auth, async (req, res) => {
   const id = BigInt(req.user.id);
   const u = await prisma.users.findUnique({
     where: { id },
-    select: { id: true, name: true, email: true, role: true, org_id: true, recruiter_type: true },
+    select: { id: true, name: true, email: true, role: true, org_id: true },
   });
   if (!u) return res.status(404).json({ error: "User not found" });
-  res.json(u);
+
+  let recruiterType = req.user?.recruiterType || "single";
+  try {
+    const row = await db("users").select("recruiter_type").where({ id: Number(id) }).first();
+    if (row?.recruiter_type) recruiterType = row.recruiter_type;
+  } catch (err) {
+    console.warn("[auth:/me] recruiter_type lookup failed", err?.message || err);
+  }
+
+  res.json({ ...u, recruiter_type: recruiterType });
 });
 
 export default router;
