@@ -17,6 +17,7 @@ const SignUpPage = () => {
     password: "",
     confirm: "",
     accessCode: "",
+    recruiterType: "single",
   });
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -56,6 +57,7 @@ const submit = async (e) => {
         email: form.workEmail.trim(),
         password: form.password,
         accessCode: form.accessCode,
+        recruiterType: form.recruiterType,
       },
     });
     // success → go to login
@@ -82,6 +84,38 @@ const submit = async (e) => {
         ) : null}
 
         <form onSubmit={submit} className="space-y-4">
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <p className="text-sm font-medium text-gray-800 mb-2">Who are you recruiting for?</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { key: "single", title: "One company", desc: "I hire for a single company and want one shared profile." },
+                { key: "agency", title: "HR agency / multiple companies", desc: "I manage openings for multiple clients and need separate profiles." },
+              ].map((opt) => {
+                const active = form.recruiterType === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setForm((p) => ({ ...p, recruiterType: opt.key }))}
+                    className={`w-full text-left rounded-md border px-3 py-3 transition ${
+                      active
+                        ? "border-gray-900 bg-white shadow-sm"
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">{opt.title}</p>
+                        <p className="text-xs text-gray-600 mt-1">{opt.desc}</p>
+                      </div>
+                      {active ? <span className="text-xs text-gray-700 font-medium">Selected</span> : null}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Company name</label>

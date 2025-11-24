@@ -27,7 +27,14 @@ export default function JobCard({ job, onDelete, onCopy }) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
       <div className="p-5">
-        <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h3 className="text-base font-semibold text-gray-900">{job.title}</h3>
+          {job.companyName && (
+            <span className="inline-flex items-center rounded-full bg-gray-100 text-gray-700 px-2.5 py-0.5 text-xs font-medium">
+              {job.companyName}
+            </span>
+          )}
+        </div>
         {job.description && (
           <p className="mt-1 text-sm text-gray-600 line-clamp-2">{job.description}</p>
         )}

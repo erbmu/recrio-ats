@@ -76,6 +76,7 @@ model applications {
 model jobs {
   id               BigInt         @id @default(autoincrement())
   org_id           BigInt
+  company_profile_id BigInt?
   title            String
   slug             String         @unique
   location         String         @default("Remote")
@@ -91,10 +92,12 @@ model jobs {
   work_type        String?
   salary           String?
   applications     applications[]
+  company_profiles company_profiles? @relation(fields: [company_profile_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
   organizations    organizations  @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "jobs_org_id_foreign")
 
   @@unique([org_id, slug], map: "jobs_org_id_slug_unique")
   @@index([org_id, is_published], map: "jobs_org_id_is_published_index")
+  @@index([company_profile_id], map: "jobs_company_profile_id_index")
 }
 
 model knex_migrations {
@@ -114,9 +117,11 @@ model organizations {
   name         String
   slug         String         @unique(map: "organizations_slug_unique")
   is_active    Boolean        @default(true)
+  company_description String?
   created_at   DateTime       @default(now()) @db.Timestamptz(6)
   updated_at   DateTime       @default(now()) @db.Timestamptz(6)
   deleted_at   DateTime?      @db.Timestamptz(6)
+  company_profiles company_profiles[]
   invite_codes invite_codes[]
   jobs         jobs[]
   users        users[]
@@ -148,6 +153,7 @@ model users {
   name          String
   password_hash String?
   role          String         @default("recruiter")
+  recruiter_type String        @default("single")
   is_active     Boolean        @default(true)
   created_at    DateTime       @default(now()) @db.Timestamptz(6)
   updated_at    DateTime       @default(now()) @db.Timestamptz(6)
@@ -174,4 +180,21 @@ model invite_codes {
 
   @@index([expires_at])
   @@index([uses, max_uses], map: "invite_codes_uses_idx")
+}
+
+model company_profiles {
+  id          BigInt        @id @default(autoincrement())
+  org_id      BigInt
+  name        String
+  description String        @default("")
+  slug        String
+  is_active   Boolean       @default(true)
+  is_default  Boolean       @default(false)
+  created_at  DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime      @default(now()) @db.Timestamptz(6)
+  organizations organizations @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "company_profiles_org_id_foreign")
+  jobs        jobs[]
+
+  @@unique([org_id, slug], map: "company_profiles_org_id_slug_unique")
+  @@index([org_id, is_active], map: "company_profiles_org_id_is_active_idx")
 }

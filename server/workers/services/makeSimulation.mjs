@@ -7,6 +7,7 @@ export async function makeSimulationForApplication(applicationId) {
   const ctx = await db("applications as ap")
     .join("jobs as j", "j.id", "ap.job_id")
     .join("organizations as o", "o.id", "j.org_id")
+    .leftJoin("company_profiles as cp", "cp.id", "j.company_profile_id")
     .where("ap.id", applicationId)
     .select(
       "ap.id as application_id",
@@ -16,7 +17,8 @@ export async function makeSimulationForApplication(applicationId) {
       "j.title as job_title",
       "j.description as job_description",
       "j.qualifications",
-      "o.company_description"
+      db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
+      db.raw("COALESCE(cp.name, o.name) as company_name")
     )
     .first();
 
@@ -57,7 +59,7 @@ export async function makeSimulationForApplication(applicationId) {
         candidateName: ctx.candidate_name,
         candidateEmail: ctx.candidate_email,
         jobTitle: ctx.job_title,
-        companyName: ctx.company_description,
+        companyName: ctx.company_name || ctx.company_description,
         simulationUrl: url,
       });
     } catch (err) {

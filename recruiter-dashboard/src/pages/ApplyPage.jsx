@@ -87,29 +87,20 @@ export default function ApplyPage() {
 
         const data = await r.json();
         if (!alive) return;
-        setJob(data.job);
+        const jobPayload = data.job || null;
+        setJob(jobPayload);
 
-        try {
-          if (data?.job?.org_id) {
-            const rr = await fetch(`${API}/api/orgs/public/${encodeURIComponent(data.job.org_id)}`);
-            if (rr.ok) {
-              const jj = await rr.json();
-              setCompanyOrg(jj?.org || null);
-              return;
+        const inferredCompany = jobPayload
+          ? {
+              id: jobPayload.company_profile_id || null,
+              name: jobPayload.company_name || jobPayload.company || "",
+              company_name: jobPayload.company_name || jobPayload.company || "",
+              company_description: jobPayload.company_description || "",
+              company_slug: jobPayload.company_slug || jobPayload.org_slug || companySlug || "",
+              slug: jobPayload.company_slug || jobPayload.org_slug || companySlug || "",
             }
-          }
-          if (companySlug) {
-            const rr2 = await fetch(`${API}/api/orgs/public/by-slug/${encodeURIComponent(companySlug)}`);
-            if (rr2.ok) {
-              const jj2 = await rr2.json();
-              setCompanyOrg(jj2?.org || null);
-              return;
-            }
-          }
-          setCompanyOrg(null);
-        } catch {
-          setCompanyOrg(null);
-        }
+          : null;
+        setCompanyOrg(inferredCompany);
       } catch (e) {
         if (alive) setBanner(e?.message || "Unable to load job");
       }

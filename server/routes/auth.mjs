@@ -60,6 +60,7 @@ router.post("/login", async (req, res) => {
     id: user.id != null ? String(user.id) : null,
     orgId: user.org_id != null ? String(user.org_id) : null,
     role: user.role || "recruiter",
+    recruiterType: user.recruiter_type || "single",
   };
 
   const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "12h" });
@@ -68,7 +69,14 @@ router.post("/login", async (req, res) => {
 
 router.post("/signup", async (req, res) => {
   try {
-    const { organizationName = "", name = "", email = "", password = "", accessCode = "" } = req.body || {};
+    const {
+      organizationName = "",
+      name = "",
+      email = "",
+      password = "",
+      accessCode = "",
+      recruiterType = "single",
+    } = req.body || {};
     const orgName = String(organizationName).trim();
     const fullName = String(name).trim();
     const emailNorm = String(email).trim().toLowerCase();
@@ -87,6 +95,7 @@ router.post("/signup", async (req, res) => {
     if (!/^[A-Z0-9]{6}$/.test(code)) {
       return res.status(400).json({ error: "Access code must be 6 letters/numbers." });
     }
+    const recruiterTypeNorm = String(recruiterType || "").toLowerCase() === "agency" ? "agency" : "single";
 
     const existingUser = await prisma.users.findUnique({ where: { email: emailNorm } });
     if (existingUser) {
@@ -145,6 +154,7 @@ router.post("/signup", async (req, res) => {
           name: fullName,
           password_hash: passwordHash,
           role: invite.role || "recruiter",
+          recruiter_type: recruiterTypeNorm,
           is_active: true,
         },
       });
@@ -191,7 +201,7 @@ router.get("/me", auth, async (req, res) => {
   const id = BigInt(req.user.id);
   const u = await prisma.users.findUnique({
     where: { id },
-    select: { id: true, name: true, email: true, role: true },
+    select: { id: true, name: true, email: true, role: true, org_id: true, recruiter_type: true },
   });
   if (!u) return res.status(404).json({ error: "User not found" });
   res.json(u);

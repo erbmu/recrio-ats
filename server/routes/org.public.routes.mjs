@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "../db.mjs";
+import { ensureDefaultProfile } from "../utils/companyProfiles.mjs";
 
 const r = Router();
 
@@ -23,8 +24,14 @@ r.get("/:orgId", async (req, res, next) => {
       .first();
 
     if (!org || org.is_active === false) return res.status(404).json({ error: "not_found_org" });
+    const profile = await ensureDefaultProfile(org.id);
     const { is_active, ...safe } = org;
-    return res.json({ org: safe });
+    const merged = {
+      ...safe,
+      company_profile_id: profile?.id || null,
+      company_description: profile?.description ?? safe.company_description ?? "",
+    };
+    return res.json({ org: merged });
   } catch (e) { next(e); }
 });
 
@@ -40,8 +47,14 @@ r.get("/by-slug/:slug", async (req, res, next) => {
       .first();
 
     if (!org || org.is_active === false) return res.status(404).json({ error: "not_found_org" });
+    const profile = await ensureDefaultProfile(org.id);
     const { is_active, ...safe } = org;
-    return res.json({ org: safe });
+    const merged = {
+      ...safe,
+      company_profile_id: profile?.id || null,
+      company_description: profile?.description ?? safe.company_description ?? "",
+    };
+    return res.json({ org: merged });
   } catch (e) { next(e); }
 });
 

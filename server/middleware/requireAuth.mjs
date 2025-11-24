@@ -33,6 +33,7 @@ export function requireAuth() {
       // ATS token is: { userId, orgId, email }
       let userId = payload.userId ?? payload.id ?? null;
       let orgId = payload.orgId ?? payload.org_id ?? null;
+      let recruiterType = payload.recruiterType ?? payload.recruiter_type ?? null;
       const email = payload.email ?? null;
 
       if (!userId) return res.status(401).json({ error: "unauthorized" });
@@ -42,10 +43,19 @@ export function requireAuth() {
         const u = await db("users").where({ id: userId }).first();
         if (!u) return res.status(401).json({ error: "unauthorized" });
         orgId = u.org_id;
+        recruiterType = recruiterType || u.recruiter_type;
         if (!orgId) return res.status(401).json({ error: "auth_incomplete" });
+      } else if (!recruiterType) {
+        // Best-effort to populate recruiter type if missing in token
+        try {
+          const u = await db("users").where({ id: userId }).select("recruiter_type").first();
+          recruiterType = u?.recruiter_type || null;
+        } catch {
+          recruiterType = null;
+        }
       }
 
-      req.auth = { userId: Number(userId), orgId: Number(orgId), email };
+      req.auth = { userId: Number(userId), orgId: Number(orgId), email, recruiterType: recruiterType || "single" };
       return next();
     } catch (e) {
       return res.status(500).json({ error: "internal_error" });

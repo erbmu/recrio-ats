@@ -4,6 +4,7 @@ import { z } from "zod";
 import crypto from "crypto";
 import { db } from "../../db.mjs";
 import { requireAuth } from "../../middleware/requireAuth.mjs";
+import { ensureDefaultProfile } from "../../utils/companyProfiles.mjs";
 
 /* utils */
 function cleanStr(v, max = 4000) {
@@ -54,6 +55,10 @@ const CreateSchema = z.object({
   employmentType: z.enum(EMPLOYMENT_TYPES, { required_error: "Employment type required" }),
   location: z.preprocess((v) => cleanStr(v, 160), z.string().min(1, "Location required")),
   salary: z.preprocess((v) => cleanStr(v, 160), z.string().optional().default("")),
+  companyProfileId: z.preprocess(
+    (v) => (v == null || v === "" ? undefined : Number(v)),
+    z.number().int().positive().optional()
+  ),
 });
 
 const r = Router();
@@ -64,6 +69,9 @@ const r = Router();
 r.get("/", requireAuth(), async (req, res, next) => {
   try {
     const orgId = req.auth.orgId;
+    const companyProfileId = req.query.companyProfileId || req.query.company_profile_id;
+    const companyFilter = companyProfileId ? Number(companyProfileId) : null;
+    await ensureDefaultProfile(orgId);
 
     // Count applications per job, tolerant to either job_id or jobId schema.
     // Postgres: quote "jobId" for camel column; COALESCE picks whichever exists per row.
@@ -77,12 +85,17 @@ r.get("/", requireAuth(), async (req, res, next) => {
 
     const rows = await db("jobs as j")
       .join("organizations as o", "o.id", "j.org_id")
+      .leftJoin("company_profiles as cp", "cp.id", "j.company_profile_id")
       .leftJoin(countsSub, "j.id", "ac.job_id")
       .where("j.org_id", orgId)
+      .modify((qb) => {
+        if (companyFilter) qb.andWhere("j.company_profile_id", companyFilter);
+      })
       .orderBy("j.id", "desc")
       .select(
         "j.id",
         "j.org_id",
+        "j.company_profile_id",
         "j.title",
         "j.slug",
         "j.public_url_token",
@@ -96,6 +109,8 @@ r.get("/", requireAuth(), async (req, res, next) => {
         "j.created_at",
         "j.is_published",
         "o.slug as org_slug",
+        db.raw("COALESCE(cp.name, o.name) as company_name"),
+        db.raw("COALESCE(cp.slug, o.slug) as company_slug"),
         db.raw("COALESCE(ac.c, 0)::int as app_count")
       );
 
@@ -114,6 +129,9 @@ r.get("/", requireAuth(), async (req, res, next) => {
       applicants: Number(j.app_count ?? j.applicants ?? 0),
       created_at: j.created_at,
       is_published: j.is_published,
+      company_profile_id: j.company_profile_id,
+      company_name: j.company_name || null,
+      company_slug: j.company_slug || null,
       apply_url: buildApplyUrl(j, j.org_slug),
     }));
 
@@ -145,9 +163,23 @@ r.post("/", requireAuth(), async (req, res, next) => {
       return res.status(400).json({ error: msg });
     }
     const { title, description, qualifications, workType, employmentType, location, salary } = parsed.data;
+    let { companyProfileId } = parsed.data;
 
     const orgId = req.auth.orgId;
     const org = await db("organizations").where({ id: orgId }).select("slug").first();
+    const defaultProfile = await ensureDefaultProfile(orgId);
+    if (!companyProfileId) {
+      companyProfileId = defaultProfile?.id;
+    } else {
+      const owned = await db("company_profiles")
+        .where({ id: companyProfileId, org_id: orgId })
+        .andWhere({ is_active: true })
+        .first();
+      if (!owned) {
+        return res.status(404).json({ error: "company_profile_not_found" });
+      }
+      companyProfileId = owned.id;
+    }
 
     let slug = await makeUniqueSlugGlobal(title);
     let tok = newToken();
@@ -170,10 +202,12 @@ r.post("/", requireAuth(), async (req, res, next) => {
             is_published: true,
             published_at: db.fn.now(),
             applicants: 0,
+            company_profile_id: companyProfileId,
           })
           .returning([
             "id",
             "org_id",
+            "company_profile_id",
             "title",
             "slug",
             "public_url_token",
@@ -186,10 +220,17 @@ r.post("/", requireAuth(), async (req, res, next) => {
             "created_at",
           ]);
 
+        const profileMeta =
+          (defaultProfile && defaultProfile.id === companyProfileId ? defaultProfile : null) ||
+          (await db("company_profiles").where({ id: companyProfileId }).first());
+
         return res.json({
           job: {
             ...inserted,
             apply_url: buildApplyUrl(inserted, org?.slug),
+            company_profile_id: companyProfileId,
+            company_name: profileMeta?.name || null,
+            company_slug: profileMeta?.slug || null,
           },
         });
       } catch (e) {
@@ -223,6 +264,7 @@ r.get("/public/by-token/:token", async (req, res, next) => {
 
     const row = await db("jobs as j")
       .join("organizations as o", "o.id", "j.org_id")
+      .leftJoin("company_profiles as cp", "cp.id", "j.company_profile_id")
       .where("j.public_url_token", tok)
       .andWhere("j.is_published", true)
       .select(
@@ -236,7 +278,11 @@ r.get("/public/by-token/:token", async (req, res, next) => {
         "j.employment_type",
         "j.location",
         "j.salary",
-        "o.slug as org_slug"
+        "o.slug as org_slug",
+        "cp.id as company_profile_id",
+        db.raw("COALESCE(cp.name, o.name) as company_name"),
+        db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
+        db.raw("COALESCE(cp.slug, o.slug) as company_slug")
       )
       .first();
 
@@ -253,6 +299,7 @@ r.get("/public/:orgSlug/:jobSlug", async (req, res, next) => {
     const { orgSlug, jobSlug } = req.params;
     const row = await db("jobs as j")
       .join("organizations as o", "o.id", "j.org_id")
+      .leftJoin("company_profiles as cp", "cp.id", "j.company_profile_id")
       .where("o.slug", orgSlug)
       .andWhere("j.slug", jobSlug)
       .andWhere("j.is_published", true)
@@ -267,7 +314,11 @@ r.get("/public/:orgSlug/:jobSlug", async (req, res, next) => {
         "j.employment_type",
         "j.location",
         "j.salary",
-        "o.slug as org_slug"
+        "o.slug as org_slug",
+        "cp.id as company_profile_id",
+        db.raw("COALESCE(cp.name, o.name) as company_name"),
+        db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
+        db.raw("COALESCE(cp.slug, o.slug) as company_slug")
       )
       .first();
 

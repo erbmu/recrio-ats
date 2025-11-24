@@ -1,5 +1,5 @@
 // client/src/pages/JobsPage.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import JobCard from "../components/JobCard";
 import { api, API_ORIGIN, tokenStore } from "../api/client";
 import {
@@ -13,9 +13,53 @@ import {
 const WORK_TYPES = ["Onsite", "Remote", "Hybrid", ""];
 const EMPLOYMENT_TYPES = ["Full-time", "Part-time", "Contract", "Internship", "Other"];
 
+const normalizeProfile = (p) =>
+  !p
+    ? null
+    : {
+        id: String(p.id),
+        name: p.name || "Company",
+        description: p.description || "",
+        slug: p.slug || "",
+        is_default: !!p.is_default,
+        is_active: p.is_active !== false,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+      };
+
 const JobsPage = () => {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const [me, setMe] = useState(null);
+  const isAgency = useMemo(() => (me?.recruiter_type || me?.recruiterType) === "agency", [me]);
+
+  const [profiles, setProfiles] = useState([]);
+  const [profilesLoading, setProfilesLoading] = useState(true);
+  const [profilesError, setProfilesError] = useState("");
+  const [selectedProfileId, setSelectedProfileId] = useState(null);
+  const [showProfileForm, setShowProfileForm] = useState(false);
+  const [profileForm, setProfileForm] = useState({ name: "", description: "" });
+  const [profileStatus, setProfileStatus] = useState("idle");
+  const [profileValidation, setProfileValidation] = useState({});
+  const activeProfile = useMemo(() => {
+    if (!profiles || profiles.length === 0) return null;
+    return (
+      profiles.find((p) => Number(p.id) === Number(selectedProfileId)) ||
+      profiles.find((p) => p.is_default) ||
+      profiles[0]
+    );
+  }, [profiles, selectedProfileId]);
+  const [profileDescDraft, setProfileDescDraft] = useState("");
+  const noProfiles = useMemo(
+    () => isAgency && !profilesLoading && profiles.length === 0,
+    [isAgency, profilesLoading, profiles.length]
+  );
+  const disableNewJob = isAgency && (!activeProfile || noProfiles);
+  const descriptionDirty = useMemo(() => {
+    if (!activeProfile) return false;
+    return (profileDescDraft || "") !== (activeProfile.description || "");
+  }, [activeProfile?.description, profileDescDraft]);
 
   const [showForm, setShowForm] = useState(false);
   const [newJob, setNewJob] = useState({
@@ -42,15 +86,66 @@ const JobsPage = () => {
   }, [successNotice]);
 
   useEffect(() => {
+    setProfileDescDraft(activeProfile?.description || "");
+  }, [activeProfile?.id, activeProfile?.description]);
+
+  useEffect(() => {
     let cancelled = false;
+    setProfilesLoading(true);
+    setProfilesError("");
+
+    (async () => {
+      try {
+        const user = await api("/api/me");
+        if (!cancelled) setMe(user?.user || user);
+      } catch (e) {
+        if (!cancelled) setProfilesError(e.message || "Failed to load account");
+      }
+
+      try {
+        const res = await api("/api/company-profiles");
+        if (cancelled) return;
+        const list = Array.isArray(res?.profiles) ? res.profiles.map(normalizeProfile).filter(Boolean) : [];
+        setProfiles(list);
+        const preferred = list.find((p) => p.is_default) || list[0] || null;
+        setSelectedProfileId((prev) => prev || preferred?.id || null);
+      } catch (e) {
+        if (!cancelled) setProfilesError((prev) => prev || e.message || "Failed to load companies");
+      } finally {
+        if (!cancelled) setProfilesLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (profilesLoading) return;
+    if (!profiles.length) return;
+    if (!selectedProfileId || !profiles.some((p) => p.id === selectedProfileId)) {
+      setSelectedProfileId(profiles[0].id);
+    }
+  }, [profilesLoading, profiles, selectedProfileId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (profilesLoading) return () => {};
+    if (isAgency && profiles.length === 0) {
+      setJobs([]);
+      setLoading(false);
+      return () => {};
+    }
+
     setLoading(true);
     setErrMsg("");
     setDebugInfo(null);
 
     (async () => {
       try {
-        // *** THE CALL ***
-        const res = await api("jobs"); // let helper add /api
+        const suffix = selectedProfileId ? `?companyProfileId=${encodeURIComponent(selectedProfileId)}` : "";
+        const res = await api(`jobs${suffix}`); // helper will prefix /api
         if (cancelled) return;
 
         const list = (res.jobs || []).map((j) => ({
@@ -65,6 +160,9 @@ const JobsPage = () => {
           applicants: j.applicants ?? 0,
           createdAt: j.created_at || Date.now(),
           atsLink: j.apply_url || null,
+          companyProfileId: j.company_profile_id || null,
+          companyName: j.company_name || "",
+          companySlug: j.company_slug || "",
         }));
         setJobs(list);
 
@@ -114,7 +212,92 @@ const JobsPage = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [profilesLoading, selectedProfileId, isAgency, profiles.length]);
+
+  const handleProfileInput = (e) => {
+    const { name, value } = e.target;
+    setProfileForm((p) => ({ ...p, [name]: value }));
+  };
+
+  const handleCreateProfile = async (e) => {
+    e.preventDefault();
+    const errs = {};
+    if (!profileForm.name.trim()) errs.name = "Company name is required.";
+    setProfileValidation(errs);
+    if (Object.keys(errs).length) return;
+
+    setProfileStatus("saving");
+    setProfilesError("");
+    try {
+      const payload = {
+        name: profileForm.name.trim(),
+        description: profileForm.description.trim(),
+        makeDefault: profiles.length === 0,
+      };
+      const res = await api("/api/company-profiles", { method: "POST", body: payload });
+      const created = res?.profile;
+      if (created) {
+        const shaped = normalizeProfile(created);
+        setProfiles((prev) => (shaped ? [shaped, ...prev] : prev));
+        if (shaped) setSelectedProfileId(shaped.id);
+      }
+      setProfileForm({ name: "", description: "" });
+      setShowProfileForm(false);
+      setProfileValidation({});
+    } catch (err) {
+      setProfilesError(err.message || "Failed to create company profile");
+    } finally {
+      setProfileStatus("idle");
+    }
+  };
+
+  const handleSaveProfileDescription = async () => {
+    if (!activeProfile) return;
+    setProfileStatus("saving");
+    try {
+      const res = await api(`/api/company-profiles/${activeProfile.id}`, {
+        method: "PATCH",
+        body: { description: profileDescDraft },
+      });
+      const updated = normalizeProfile(res?.profile);
+      if (updated) {
+        setProfiles((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      }
+    } catch (e) {
+      setProfilesError(e.message || "Failed to save profile");
+    } finally {
+      setProfileStatus("idle");
+    }
+  };
+
+  const handleMakeDefault = async (id) => {
+    if (!id) return;
+    try {
+      setProfileStatus("saving");
+      const res = await api(`/api/company-profiles/${id}`, {
+        method: "PATCH",
+        body: { is_default: true },
+      });
+      const updated = normalizeProfile(res?.profile);
+      if (updated) {
+        setProfiles((prev) =>
+          prev.map((p) => {
+            if (p.id === updated.id) return updated;
+            return { ...p, is_default: false };
+          })
+        );
+        setSelectedProfileId(updated.id);
+      }
+    } catch (e) {
+      setProfilesError(e.message || "Unable to set default company");
+    } finally {
+      setProfileStatus("idle");
+    }
+  };
+
+  const handleSelectProfile = (value) => {
+    setSelectedProfileId(value || null);
+  };
 
   const setDeleteTargetSafe = (job) => {
     if (!job) return;
@@ -189,6 +372,10 @@ const JobsPage = () => {
     e.preventDefault();
     setErrMsg("");
     if (!validate()) return;
+    if (!activeProfile) {
+      setErrMsg("Create a company profile first.");
+      return;
+    }
 
     try {
       const payload = {
@@ -199,6 +386,7 @@ const JobsPage = () => {
         employmentType: newJob.employmentType.trim(),
         location: newJob.location.trim(),
         salary: newJob.salary.trim(),
+        companyProfileId: activeProfile?.id || undefined,
       };
       const res = await api("jobs", { method: "POST", body: payload });
       const j = res.job;
@@ -215,6 +403,9 @@ const JobsPage = () => {
         applicants: j.applicants ?? 0,
         createdAt: j.created_at || Date.now(),
         atsLink: j.apply_url || "",
+        companyProfileId: j.company_profile_id || activeProfile?.id || null,
+        companyName: j.company_name || activeProfile?.name || "",
+        companySlug: j.company_slug || activeProfile?.slug || "",
       };
 
       setJobs((prev) => [created, ...prev]);
@@ -241,16 +432,173 @@ const JobsPage = () => {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Your Job Postings</h1>
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition"
-          type="button"
-        >
-          {showForm ? "Close" : "New Job Posting"}
-        </button>
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <h1 className="text-2xl font-semibold text-gray-900">
+          Your Job Postings
+          {isAgency && activeProfile?.name ? (
+            <span className="text-sm font-normal text-gray-500 ml-2">
+              · {activeProfile.name}
+            </span>
+          ) : null}
+        </h1>
+        <div className="text-right">
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className={`px-4 py-2 rounded-lg text-white transition ${
+              disableNewJob ? "bg-gray-400 cursor-not-allowed" : "bg-black hover:bg-gray-800"
+            }`}
+            type="button"
+            disabled={disableNewJob}
+          >
+            {showForm ? "Close" : "New Job Posting"}
+          </button>
+          {disableNewJob && (
+            <p className="text-xs text-gray-500 mt-1">Add a company profile first.</p>
+          )}
+        </div>
       </div>
+
+      {isAgency && (
+        <section className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mb-8">
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <p className="text-lg font-semibold text-gray-900">Company profiles</p>
+              <p className="text-sm text-gray-600">
+                Switch between clients to see their jobs and customize each description.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setProfileForm({ name: "", description: "" });
+                setProfileValidation({});
+                setShowProfileForm(true);
+              }}
+              className="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              + New company
+            </button>
+          </div>
+
+          {profilesError && (
+            <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              {profilesError}
+            </div>
+          )}
+
+          {profilesLoading ? (
+            <div className="rounded-lg border border-dashed border-gray-300 p-6 text-sm text-gray-600 text-center">
+              Loading companies…
+            </div>
+          ) : profiles.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-gray-600">
+              <p className="mb-4">Create your first company profile to unlock job postings.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileForm({ name: "", description: "" });
+                  setProfileValidation({});
+                  setShowProfileForm(true);
+                }}
+                className="px-4 py-2 rounded-md bg-black text-white text-sm hover:bg-gray-900"
+              >
+                Create company profile
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Active company
+                  </label>
+                  <select
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 bg-white"
+                    value={selectedProfileId || ""}
+                    onChange={(e) => handleSelectProfile(e.target.value)}
+                  >
+                    {profiles.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                        {p.is_default ? " (default)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+                  <p className="text-gray-600">Default profile</p>
+                  <p className="text-gray-900 font-medium">
+                    {profiles.find((p) => p.is_default)?.name || "—"}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleMakeDefault(activeProfile?.id)}
+                    disabled={!activeProfile || activeProfile.is_default || profileStatus === "saving"}
+                    className="mt-2 inline-flex items-center px-3 py-1.5 rounded-md text-sm border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-60"
+                  >
+                    {activeProfile?.is_default ? "Already default" : "Make default"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-5">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {activeProfile?.name || "Company"} description
+                </label>
+                <textarea
+                  value={profileDescDraft}
+                  onChange={(e) => setProfileDescDraft(e.target.value)}
+                  rows={5}
+                  className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                  placeholder="Describe benefits, mission, links, etc."
+                />
+                <div className="flex flex-wrap items-center gap-3 mt-3">
+                  <button
+                    type="button"
+                    onClick={handleSaveProfileDescription}
+                    disabled={!descriptionDirty || profileStatus === "saving"}
+                    className="inline-flex items-center px-4 py-2 rounded-md bg-black text-white text-sm disabled:opacity-60"
+                  >
+                    {profileStatus === "saving" ? "Saving…" : "Save description"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProfileDescDraft(activeProfile?.description || "")}
+                    disabled={!descriptionDirty || profileStatus === "saving"}
+                    className="text-sm text-gray-600 hover:text-gray-900"
+                  >
+                    Reset changes
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <p className="text-sm font-medium text-gray-700 mb-2">Quick switch</p>
+                {profiles.length <= 1 ? (
+                  <p className="text-xs text-gray-500">Add more profiles to switch between companies.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {profiles.map((p) => (
+                      <button
+                        type="button"
+                        key={p.id}
+                        onClick={() => handleSelectProfile(p.id)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
+                          p.id === selectedProfileId
+                            ? "bg-gray-900 text-white border-gray-900"
+                            : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
       {errMsg && (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -408,7 +756,24 @@ const JobsPage = () => {
         </form>
       )}
 
-      {loading ? (
+      {noProfiles ? (
+        <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-gray-600 bg-white">
+          Add a company profile to start creating roles.
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => {
+                setProfileForm({ name: "", description: "" });
+                setProfileValidation({});
+                setShowProfileForm(true);
+              }}
+              className="px-4 py-2 rounded-md bg-black text-white text-sm hover:bg-gray-900"
+            >
+              Create company profile
+            </button>
+          </div>
+        </div>
+      ) : loading ? (
         <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center text-gray-600 bg-white">
           Loading jobs…
         </div>
@@ -483,6 +848,79 @@ const JobsPage = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {showProfileForm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8 bg-black/40 backdrop-blur-sm"
+          onClick={() => {
+            if (profileStatus === "saving") return;
+            setShowProfileForm(false);
+          }}
+        >
+          <form
+            onSubmit={handleCreateProfile}
+            className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-2xl p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-lg font-semibold text-gray-900">New company profile</p>
+                <p className="text-sm text-gray-600">Set up a client and its description.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProfileForm(false)}
+                className="text-gray-400 hover:text-gray-600"
+                disabled={profileStatus === "saving"}
+              >
+                ×
+              </button>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Company name</label>
+              <input
+                name="name"
+                type="text"
+                value={profileForm.name}
+                onChange={handleProfileInput}
+                required
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+              />
+              {profileValidation.name && (
+                <p className="text-xs text-red-600 mt-1">{profileValidation.name}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <textarea
+                name="description"
+                value={profileForm.description}
+                onChange={handleProfileInput}
+                rows={4}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                placeholder="Optional overview, mission, benefits…"
+              />
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowProfileForm(false)}
+                className="px-4 py-2 rounded-md border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
+                disabled={profileStatus === "saving"}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={profileStatus === "saving"}
+                className="px-4 py-2 rounded-md bg-black text-white text-sm disabled:opacity-60"
+              >
+                {profileStatus === "saving" ? "Saving…" : "Create profile"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

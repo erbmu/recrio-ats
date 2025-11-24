@@ -66,6 +66,7 @@ async function buildCandidateContext({ candidateId, jobId }) {
   const candidate = await db("applications as ap")
     .leftJoin("jobs as j", "j.id", "ap.job_id")
     .leftJoin("organizations as o", "o.id", "j.org_id")
+    .leftJoin("company_profiles as cp", "cp.id", "j.company_profile_id")
     .leftJoin("simulations as sim", "sim.application_id", "ap.id")
     .where("ap.id", candidateId)
     .andWhere("ap.job_id", jobId)
@@ -77,7 +78,7 @@ async function buildCandidateContext({ candidateId, jobId }) {
       "ap.career_card",
       "j.title as job_title",
       "j.description as job_description",
-      "o.company_description",
+      db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
       "sim.id as simulation_id"
     )
     .first();
@@ -108,12 +109,13 @@ router.post("/analyze", requireAuth(), async (req, res, next) => {
     if (!Number.isInteger(jobNumeric)) return res.status(400).json({ error: "bad_job_id" });
     const job = await db("jobs as j")
       .leftJoin("organizations as o", "o.id", "j.org_id")
+      .leftJoin("company_profiles as cp", "cp.id", "j.company_profile_id")
       .where("j.id", jobNumeric)
       .select(
         "j.id",
         "j.title",
         "j.description",
-        "o.company_description",
+        db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
         "o.id as org_id"
       )
       .first();

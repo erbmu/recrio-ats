@@ -295,6 +295,7 @@ const baseApplicationQuery = () =>
   db("applications as ap")
     .leftJoin("jobs as j", "j.id", "ap.job_id")
     .leftJoin("organizations as o", "o.id", "j.org_id")
+    .leftJoin("company_profiles as cp", "cp.id", "j.company_profile_id")
     .select(
       "ap.id as application_id",
       "ap.career_card",
@@ -305,9 +306,9 @@ const baseApplicationQuery = () =>
       "j.description as role_description",
       "j.title as job_title",
       "o.id as org_id",
-      "o.name as company_name",
-      "o.company_description",
-      db.raw("o.company_description as org_description")
+      db.raw("COALESCE(cp.name, o.name) as company_name"),
+      db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
+      db.raw("COALESCE(cp.description, o.company_description, '') as org_description")
     );
 
 async function fetchApplicationForCandidate({ applicationId, supabaseId }) {
@@ -326,6 +327,7 @@ async function fetchApplicationForCandidate({ applicationId, supabaseId }) {
       .join("applications as ap", "ap.id", "c.application_id")
       .leftJoin("jobs as j", "j.id", "ap.job_id")
       .leftJoin("organizations as o", "o.id", "j.org_id")
+      .leftJoin("company_profiles as cp", "cp.id", "j.company_profile_id")
       .where("c.id", supabaseId)
       .select(
         "ap.id as application_id",
@@ -337,9 +339,9 @@ async function fetchApplicationForCandidate({ applicationId, supabaseId }) {
         "j.description as role_description",
         "j.title as job_title",
         "o.id as org_id",
-        "o.name as company_name",
-        "o.company_description",
-        db.raw("o.company_description as org_description")
+        db.raw("COALESCE(cp.name, o.name) as company_name"),
+        db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
+        db.raw("COALESCE(cp.description, o.company_description, '') as org_description")
       )
       .first();
     if (row) return row;

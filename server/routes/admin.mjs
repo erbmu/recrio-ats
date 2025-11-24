@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 const router = express.Router();
 
 function generateInviteCode(len = 6) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // removed ambiguous 0/O/1/I
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // avoid ambiguous chars
   let out = "";
   for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
@@ -19,10 +19,12 @@ router.post("/admin/invite-code", auth, requireAdmin, async (req, res) => {
     const { orgId = null, role = "recruiter", maxUses = 1, expiresAt = null } = req.body || {};
 
     // ensure uniqueness
-    let code, exists = true;
-    while (exists) {
+    let code;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
       code = generateInviteCode(6);
-      exists = await prisma.invite_codes.findUnique({ where: { code } });
+      const exists = await prisma.invite_codes.findUnique({ where: { code } });
+      if (!exists) break;
     }
 
     const invite = await prisma.invite_codes.create({
@@ -42,7 +44,9 @@ router.post("/admin/invite-code", auth, requireAdmin, async (req, res) => {
         ...invite,
         id: invite.id.toString(),
         org_id: invite.org_id ? invite.org_id.toString() : null,
-        created_by_user_id: invite.created_by_user_id ? invite.created_by_user_id.toString() : null,
+        created_by_user_id: invite.created_by_user_id
+          ? invite.created_by_user_id.toString()
+          : null,
       },
     });
   } catch (e) {
@@ -51,21 +55,29 @@ router.post("/admin/invite-code", auth, requireAdmin, async (req, res) => {
   }
 });
 
-// (Optional) list recent invites
+// GET /api/admin/invite-codes
 router.get("/admin/invite-codes", auth, requireAdmin, async (_req, res) => {
-  const rows = await prisma.invite_codes.findMany({
-    orderBy: { created_at: "desc" },
-    take: 20,
-  });
-  return res.json({
-    ok: true,
-    invites: rows.map((r) => ({
-      ...r,
-      id: r.id.toString(),
-      org_id: r.org_id ? r.org_id.toString() : null,
-      created_by_user_id: r.created_by_user_id ? r.created_by_user_id.toString() : null,
-    })),
-  });
+  try {
+    const rows = await prisma.invite_codes.findMany({
+      orderBy: { created_at: "desc" },
+      take: 20,
+    });
+
+    return res.json({
+      ok: true,
+      invites: rows.map((r) => ({
+        ...r,
+        id: r.id.toString(),
+        org_id: r.org_id ? r.org_id.toString() : null,
+        created_by_user_id: r.created_by_user_id
+          ? r.created_by_user_id.toString()
+          : null,
+      })),
+    });
+  } catch (e) {
+    console.error("list invites error:", e);
+    return res.status(500).json({ error: "Failed to load invites" });
+  }
 });
 
 export default router;

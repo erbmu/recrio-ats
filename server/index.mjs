@@ -17,6 +17,7 @@ import atsJobsRoutes from "./routes/ats/jobs.routes.mjs";
 import atsApplicationsRoutes from "./routes/ats/applications.routes.mjs";
 import orgRoutes from "./routes/org.routes.mjs";
 import orgPublicRoutes from "./routes/org.public.routes.mjs";
+import companyProfilesRoutes from "./routes/companyProfiles.routes.mjs";
 
 dotenv.config();
 
@@ -41,6 +42,7 @@ app.use(
 app.use(morgan(isProd ? "combined" : "tiny"));
 
 app.use(orgRoutes);
+app.use(companyProfilesRoutes);
 
 app.use(simPublicRoutes);
 app.use(simRoutes);

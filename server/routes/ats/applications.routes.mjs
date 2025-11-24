@@ -377,13 +377,14 @@ r.post(
         // Get org/company_description
         const meta = await db("jobs as j")
           .join("organizations as o", "o.id", "j.org_id")
+          .leftJoin("company_profiles as cp", "cp.id", "j.company_profile_id")
           .where("j.id", jobId)
           .select(
             "j.id as job_id",
             "j.title as job_title",
             "j.description as job_description",
-            "o.company_description as company_description",
-            "o.name as company_name"
+            db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
+            db.raw("COALESCE(cp.name, o.name) as company_name")
           )
           .first();
 
