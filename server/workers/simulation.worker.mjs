@@ -1,6 +1,6 @@
 // simulation.worker.mjs (or wherever makeSimulationForApplication lives)
 import crypto from "crypto";
-import { db } from "./db.mjs";
+import { db } from "../db.mjs";
 import { sendSimulationInviteEmail } from "../lib/renderMail.mjs";
 
 const SIM_PUBLIC_BASE = process.env.SIM_PUBLIC_BASE || "http://localhost:5173";
