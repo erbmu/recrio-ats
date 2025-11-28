@@ -14,6 +14,7 @@ import {
   fetchSimulationResponsesAndViolations,
   fetchIdentityCheck,
   computeOverallFromReport,
+  getSimulationRunColumns,
 } from "../../lib/simulationAnalysis.mjs";
 import {
   __testables as careerCardTestables,
@@ -57,6 +58,8 @@ try {
 /* ------------------------------------------------------------------------- */
 /* helpers                                                                   */
 /* ------------------------------------------------------------------------- */
+const columnRef = (table, column) => db.ref(`${table}.${column}`);
+
 function toPct(n) {
   const v = typeof n === "number" ? n : Number(n);
   return Number.isFinite(v) ? v : null;
@@ -510,10 +513,15 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
       .select("event_type", "data", "created_at");
 
     // Latest run summary (optional)
-    const latestRun = await db("simulation_runs")
-      .where({ application_id: id })
-      .orderBy("id", "desc")
-      .first();
+    const simColumns = await getSimulationRunColumns();
+    let latestRun = null;
+    if (simColumns?.application) {
+      const orderColumn = simColumns.id || "id";
+      latestRun = await db("simulation_runs")
+        .where(columnRef("simulation_runs", simColumns.application), id)
+        .orderBy(columnRef("simulation_runs", orderColumn), "desc")
+        .first();
+    }
 
     // Per-question analyses
     const analyses = await db("simulation_analyses as sa")
@@ -601,7 +609,12 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
       },
       events,
       simulation: {
-        summary: latestRun?.summary_text || null,
+        summary: latestRun
+          ? (simColumns?.summary && latestRun[simColumns.summary]) ??
+            latestRun.summary_text ??
+            latestRun.summaryText ??
+            null
+          : null,
         analyses: analyses.map(an => ({
           id: an.id,
           label: an.question_label || an.canonical_label || `Response #${an.id}`,

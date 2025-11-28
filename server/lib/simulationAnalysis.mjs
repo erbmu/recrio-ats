@@ -1,4 +1,94 @@
 import { db } from "../db.mjs";
+import { resolveColumn } from "./columnResolver.mjs";
+
+const tableRef = (table, column) => db.ref(`${table}.${column}`);
+
+let simulationRunColumnsCache = null;
+async function getSimulationRunColumns() {
+  if (simulationRunColumnsCache) return simulationRunColumnsCache;
+  simulationRunColumnsCache = {
+    external: await resolveColumn("simulation_runs", [
+      "external_simulation_id",
+      "externalSimulationId",
+      "simulation_id",
+      "simulationId",
+    ]),
+    report: await resolveColumn("simulation_runs", ["analysis_report", "analysisReport", "report"]),
+    generated: await resolveColumn("simulation_runs", [
+      "analysis_generated_at",
+      "analysisGeneratedAt",
+      "generated_at",
+      "generatedAt",
+    ]),
+    application: await resolveColumn("simulation_runs", ["application_id", "applicationId", "app_id", "appId"]),
+    summary: await resolveColumn("simulation_runs", ["summary_text", "summaryText", "summary"]),
+    id: await resolveColumn("simulation_runs", ["id", "ID"]),
+  };
+  return simulationRunColumnsCache;
+}
+
+let responseColumnsCache = null;
+async function getResponseColumns() {
+  if (responseColumnsCache) return responseColumnsCache;
+  responseColumnsCache = {
+    external: await resolveColumn("simulation_responses", [
+      "external_simulation_id",
+      "externalSimulationId",
+      "simulation_id",
+      "simulationId",
+    ]),
+    question: await resolveColumn("simulation_responses", ["question_id", "questionId"]),
+    response: await resolveColumn("simulation_responses", [
+      "response",
+      "response_text",
+      "content",
+      "answer",
+      "body",
+      "value",
+    ]),
+    metadata: await resolveColumn("simulation_responses", ["metadata", "meta"]),
+    timestamp: await resolveColumn("simulation_responses", ["timestamp", "created_at", "createdAt"]),
+    id: await resolveColumn("simulation_responses", ["id", "ID"]),
+  };
+  return responseColumnsCache;
+}
+
+let violationColumnsCache = null;
+async function getViolationColumns() {
+  if (violationColumnsCache) return violationColumnsCache;
+  violationColumnsCache = {
+    external: await resolveColumn("simulation_violations", [
+      "external_simulation_id",
+      "externalSimulationId",
+      "simulation_id",
+      "simulationId",
+    ]),
+    type: await resolveColumn("simulation_violations", ["violation_type", "violationType", "type"]),
+    metadata: await resolveColumn("simulation_violations", ["metadata", "meta"]),
+    created: await resolveColumn("simulation_violations", ["created_at", "createdAt", "timestamp"]),
+    id: await resolveColumn("simulation_violations", ["id", "ID"]),
+  };
+  return violationColumnsCache;
+}
+
+let identityColumnsCache = null;
+async function getIdentityColumns() {
+  if (identityColumnsCache) return identityColumnsCache;
+  identityColumnsCache = {
+    external: await resolveColumn("simulation_identity_checks", [
+      "external_simulation_id",
+      "externalSimulationId",
+      "simulation_id",
+      "simulationId",
+    ]),
+    selfiePath: await resolveColumn("simulation_identity_checks", ["selfie_path", "selfiePath"]),
+    selfieUrl: await resolveColumn("simulation_identity_checks", ["selfie_url", "selfieUrl"]),
+    idPath: await resolveColumn("simulation_identity_checks", ["id_path", "idPath"]),
+    idUrl: await resolveColumn("simulation_identity_checks", ["id_url", "idUrl"]),
+    created: await resolveColumn("simulation_identity_checks", ["created_at", "createdAt", "timestamp"]),
+  };
+  return identityColumnsCache;
+}
 
 function computeOverallFromReport(report) {
   if (!report || typeof report !== "object") return null;
@@ -17,25 +107,41 @@ function computeOverallFromReport(report) {
   return null;
 }
 
-function normalizeAnalysisRow(row) {
-  if (!row || typeof row !== "object") return null;
-  const simulationKey = row.external_simulation_id ? String(row.external_simulation_id) : null;
-  if (!simulationKey) return null;
+function pickValue(row, column, fallbacks = []) {
+  if (column && row && row[column] != null) return row[column];
+  for (const fallback of fallbacks) {
+    if (row && row[fallback] != null) return row[fallback];
+  }
+  return null;
+}
 
-  let analysisReport = row.analysis_report ?? null;
-  if (typeof analysisReport === "string" && analysisReport.trim()) {
+function normalizeAnalysisRow(row, columns) {
+  if (!row || !columns?.external) return null;
+  const simulationKeyRaw = pickValue(row, columns.external, ["external_simulation_id", "externalSimulationId"]);
+  if (simulationKeyRaw == null) return null;
+  const simulationKey = String(simulationKeyRaw);
+
+  let analysisReport = pickValue(row, columns.report, ["analysis_report", "analysisReport", "report"]);
+  if (typeof analysisReport === "string") {
     try {
       analysisReport = JSON.parse(analysisReport);
     } catch {
-      /* keep string */
+      /* leave as string */
     }
   }
+  const analysisGeneratedAt = pickValue(row, columns.generated, [
+    "analysis_generated_at",
+    "analysisGeneratedAt",
+    "generated_at",
+    "generatedAt",
+  ]);
+  const analysisOverallScore = computeOverallFromReport(analysisReport);
 
   return {
     simulation_key: simulationKey,
     analysis_report: analysisReport,
-    analysis_generated_at: row.analysis_generated_at ?? null,
-    analysis_overall_score: computeOverallFromReport(analysisReport),
+    analysis_generated_at: analysisGeneratedAt,
+    analysis_overall_score: analysisOverallScore,
   };
 }
 
@@ -47,12 +153,15 @@ export async function fetchSimulationAnalyses({ simulationIds = [] } = {}) {
   const bySimulationId = new Map();
   if (!uniqueKeys.length) return { bySimulationId };
 
+  const columns = await getSimulationRunColumns();
+  if (!columns.external) return { bySimulationId };
+
   const rows = await db("simulation_runs")
-    .select("external_simulation_id", "analysis_report", "analysis_generated_at")
-    .whereIn("external_simulation_id", uniqueKeys);
+    .select("*")
+    .whereIn(tableRef("simulation_runs", columns.external), uniqueKeys);
 
   for (const row of rows) {
-    const normalized = normalizeAnalysisRow(row);
+    const normalized = normalizeAnalysisRow(row, columns);
     if (normalized?.simulation_key) {
       bySimulationId.set(normalized.simulation_key, normalized);
     }
@@ -62,42 +171,66 @@ export async function fetchSimulationAnalyses({ simulationIds = [] } = {}) {
 
 export async function fetchSimulationAnalysis({ simulationId } = {}) {
   if (simulationId == null) return null;
-  const key = String(simulationId);
+
+  const columns = await getSimulationRunColumns();
+  if (!columns.external) return null;
+
   const row = await db("simulation_runs")
-    .select("external_simulation_id", "analysis_report", "analysis_generated_at")
-    .where({ external_simulation_id: key })
+    .select("*")
+    .where(tableRef("simulation_runs", columns.external), String(simulationId))
     .first();
-  return row ? normalizeAnalysisRow(row) : null;
+
+  return normalizeAnalysisRow(row, columns);
 }
 
 export async function fetchSimulationResponsesAndViolations(simulationId) {
   if (simulationId == null) return { responses: [], violations: [] };
   const key = String(simulationId);
 
-  const responses = await db("simulation_responses")
-    .select("id", "question_id", "response", "metadata", "timestamp")
-    .where({ external_simulation_id: key })
-    .orderBy("timestamp", "asc");
+  const responseColumns = await getResponseColumns();
+  const violationColumns = await getViolationColumns();
 
-  const violations = await db("simulation_violations")
-    .select("id", "violation_type", "metadata", "created_at")
-    .where({ external_simulation_id: key })
-    .orderBy("created_at", "asc");
+  const responses = responseColumns.external
+    ? await db("simulation_responses")
+        .select("*")
+        .where(tableRef("simulation_responses", responseColumns.external), key)
+        .orderBy(
+          tableRef("simulation_responses", responseColumns.timestamp || responseColumns.id || "timestamp"),
+          "asc"
+        )
+    : [];
+
+  const violations = violationColumns.external
+    ? await db("simulation_violations")
+        .select("*")
+        .where(tableRef("simulation_violations", violationColumns.external), key)
+        .orderBy(
+          tableRef("simulation_violations", violationColumns.created || violationColumns.id || "created_at"),
+          "asc"
+        )
+    : [];
 
   return {
     responses: responses.map((row, idx) => ({
-      id: row.id ?? idx,
-      question_id: row.question_id ?? null,
-      created_at: row.timestamp ?? null,
-      content: row.response ?? null,
-      meta: row.metadata ?? null,
+      id: pickValue(row, responseColumns.id, ["id"]) ?? idx,
+      question_id: pickValue(row, responseColumns.question, ["question_id", "questionId"]),
+      created_at: pickValue(row, responseColumns.timestamp, ["timestamp", "created_at", "createdAt"]),
+      content: pickValue(row, responseColumns.response, [
+        "response",
+        "response_text",
+        "content",
+        "answer",
+        "value",
+        "body",
+      ]),
+      meta: pickValue(row, responseColumns.metadata, ["metadata", "meta"]) || null,
       raw: row,
     })),
     violations: violations.map((row, idx) => ({
-      id: row.id ?? idx,
-      type: row.violation_type ?? null,
-      created_at: row.created_at ?? null,
-      meta: row.metadata ?? null,
+      id: pickValue(row, violationColumns.id, ["id"]) ?? idx,
+      type: pickValue(row, violationColumns.type, ["violation_type", "violationType", "type"]),
+      created_at: pickValue(row, violationColumns.created, ["created_at", "createdAt", "timestamp"]),
+      meta: pickValue(row, violationColumns.metadata, ["metadata", "meta"]) || null,
       raw: row,
     })),
   };
@@ -114,18 +247,30 @@ const buildAssetUrl = (path) => {
 export async function fetchIdentityCheck(simulationId) {
   if (simulationId == null) return { selfie_url: null, id_url: null };
   const key = String(simulationId);
+  const columns = await getIdentityColumns();
+  if (!columns.external) return { selfie_url: null, id_url: null };
 
   const row = await db("simulation_identity_checks")
-    .select("selfie_path", "id_path", "selfie_url", "id_url")
-    .where({ external_simulation_id: key })
-    .orderBy("created_at", "desc")
+    .select("*")
+    .where(tableRef("simulation_identity_checks", columns.external), key)
+    .orderBy(
+      tableRef("simulation_identity_checks", columns.created || "created_at"),
+      "desc"
+    )
     .first();
 
   if (!row) return { selfie_url: null, id_url: null };
+  const selfie =
+    pickValue(row, columns.selfieUrl, ["selfie_url"]) ||
+    pickValue(row, columns.selfiePath, ["selfie_path"]);
+  const idDoc =
+    pickValue(row, columns.idUrl, ["id_url"]) ||
+    pickValue(row, columns.idPath, ["id_path"]);
+
   return {
-    selfie_url: buildAssetUrl(row.selfie_url || row.selfie_path),
-    id_url: buildAssetUrl(row.id_url || row.id_path),
+    selfie_url: buildAssetUrl(selfie),
+    id_url: buildAssetUrl(idDoc),
   };
 }
 
-export { computeOverallFromReport };
+export { computeOverallFromReport, getSimulationRunColumns };
