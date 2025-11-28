@@ -22,7 +22,7 @@ import {
   calculateOverallScore,
   ensureCareerCardReport,
 } from "../../lib/careerCardReportService.mjs";
-import { makeSimulationForApplication } from "../../workers/services/makeSimulation.mjs";
+import { makeSimulationForApplication } from "../../workers/simulation.worker.mjs";
 
 /* Optional queue – safe to be missing locally */
 let simQueue = null;
