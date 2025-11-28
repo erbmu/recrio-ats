@@ -8,25 +8,10 @@ import { db } from "../db.mjs";
 
 const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();
 const GEMINI_MODEL = (process.env.GEMINI_MODEL || "gemini-2.0-flash-exp").trim();
-
-const SUPABASE_URL =
-  (process.env.SUPABASE_URL ||
-    process.env.SUPABASE_PROJECT_URL ||
-    process.env.SUPABASE_REST_URL ||
-    "")
-    .trim()
-    .replace(/\/+$/, "");
-const SUPABASE_SERVICE_ROLE_KEY =
-  (process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE ||
-    "").trim();
-const SUPABASE_REST_BASE = SUPABASE_URL ? `${SUPABASE_URL}/rest/v1` : "";
-const SUPABASE_TABLE = "career_card_reports";
+const CAREER_CARD_TABLE = "career_card_reports";
 
 const DEFAULT_NAMESPACE = "4d9158ab-4720-4f53-9ce0-b4c6b0c8f0b2";
-const CANDIDATE_NAMESPACE =
-  (process.env.CANDIDATE_NAMESPACE_UUID || DEFAULT_NAMESPACE).trim();
+const CANDIDATE_NAMESPACE = (process.env.CANDIDATE_NAMESPACE_UUID || DEFAULT_NAMESPACE).trim();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_ROOT = path.resolve(__dirname, "..");
@@ -51,17 +36,6 @@ const ServiceError = (message, status = 500, details) => {
   return err;
 };
 
-const hasSupabaseConfig = () => Boolean(SUPABASE_REST_BASE && SUPABASE_SERVICE_ROLE_KEY);
-
-const ensureSupabaseConfig = () => {
-  if (!SUPABASE_REST_BASE || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw ServiceError("supabase_config_missing", 500, {
-      missing_url: !SUPABASE_REST_BASE,
-      missing_key: !SUPABASE_SERVICE_ROLE_KEY,
-    });
-  }
-};
-
 const ensureGeminiConfig = () => {
   if (!GEMINI_API_KEY) {
     throw ServiceError("gemini_config_missing", 500);
@@ -83,7 +57,7 @@ const normalizeCandidateIdentifier = (raw) => {
   if (isUuid(trimmed)) {
     return {
       candidateId: trimmed,
-      supabaseId: trimmed,
+      reportId: trimmed,
       applicationId: null,
       raw: trimmed,
     };
@@ -98,11 +72,11 @@ const normalizeCandidateIdentifier = (raw) => {
     throw ServiceError("invalid_candidate_namespace", 500);
   }
 
-  const supabaseId = uuidv5(`application:${numeric}`, CANDIDATE_NAMESPACE);
+  const reportId = uuidv5(`application:${numeric}`, CANDIDATE_NAMESPACE);
 
   return {
     candidateId: trimmed,
-    supabaseId,
+    reportId,
     applicationId: numeric,
     raw: trimmed,
   };
@@ -311,14 +285,14 @@ const baseApplicationQuery = () =>
       db.raw("COALESCE(cp.description, o.company_description, '') as org_description")
     );
 
-async function fetchApplicationForCandidate({ applicationId, supabaseId }) {
+async function fetchApplicationForCandidate({ applicationId, reportId }) {
   if (applicationId != null) {
     return baseApplicationQuery().where("ap.id", applicationId).first();
   }
 
   const hasCandidateUuidColumn = await applicationsHasColumn("candidate_uuid");
   if (hasCandidateUuidColumn) {
-    const row = await baseApplicationQuery().where("ap.candidate_uuid", supabaseId).first();
+    const row = await baseApplicationQuery().where("ap.candidate_uuid", reportId).first();
     if (row) return row;
   }
 
@@ -328,7 +302,7 @@ async function fetchApplicationForCandidate({ applicationId, supabaseId }) {
       .leftJoin("jobs as j", "j.id", "ap.job_id")
       .leftJoin("organizations as o", "o.id", "j.org_id")
       .leftJoin("company_profiles as cp", "cp.id", "j.company_profile_id")
-      .where("c.id", supabaseId)
+      .where("c.id", reportId)
       .select(
         "ap.id as application_id",
         "ap.career_card",
@@ -504,63 +478,6 @@ async function buildCandidateContext(identifiers) {
     applicationUpdatedAt: application.application_updated_at,
   };
 }
-
-const supabaseHeaders = () => ({
-  apikey: SUPABASE_SERVICE_ROLE_KEY,
-  Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-  "Content-Type": "application/json",
-  Accept: "application/json",
-  Prefer: "return=representation",
-});
-
-async function fetchSupabaseReportRow(candidateSupabaseId) {
-  ensureSupabaseConfig();
-  const url = new URL(`${SUPABASE_REST_BASE}/${SUPABASE_TABLE}`);
-  url.searchParams.set("select", "*");
-  url.searchParams.set("candidate_id", `eq.${candidateSupabaseId}`);
-  url.searchParams.set("limit", "1");
-
-  const resp = await fetch(url.toString(), {
-    method: "GET",
-    headers: supabaseHeaders(),
-  });
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw ServiceError("supabase_fetch_failed", resp.status, { body });
-  }
-  const rows = await resp.json();
-  if (!Array.isArray(rows) || !rows.length) return null;
-  return normalizeSupabaseRow(rows[0]);
-}
-
-const normalizeSupabaseRow = (row) => {
-  if (!row) return null;
-  const parsedCategory =
-    typeof row.category_scores === "string" ? parseJsonSafe(row.category_scores) : row.category_scores;
-  let rawReport = row.raw_report;
-  if (typeof rawReport === "string") rawReport = parseJsonSafe(rawReport);
-  const strengths = Array.isArray(row.strengths)
-    ? row.strengths
-    : parseJsonSafe(row.strengths) || [];
-  const improvements = Array.isArray(row.improvements)
-    ? row.improvements
-    : parseJsonSafe(row.improvements) || [];
-
-  return {
-    id: row.id,
-    candidate_id: row.candidate_id,
-    overall_score: coerceScore(row.overall_score),
-    category_scores: parsedCategory || {},
-    strengths,
-    improvements,
-    overall_feedback: row.overall_feedback || "",
-    raw_report: rawReport || null,
-    generated_at: row.generated_at || row.created_at || null,
-    created_at: row.created_at || null,
-    updated_at: row.updated_at || null,
-    metadata_hash: rawReport?.metadata?.card_hash || null,
-  };
-};
 
 const coerceScore = (value) => {
   const num = typeof value === "number" ? value : Number(value);
@@ -758,16 +675,37 @@ Provide a comprehensive scoring and feedback.`;
   return { response: data, scoring: parsed };
 };
 
-async function storeSupabaseReport({
-  supabaseId,
-  cardHash,
-  scoring,
-  context,
-  geminiResponse,
-}) {
-  ensureSupabaseConfig();
+const normalizeDbRow = (row) => {
+  if (!row) return null;
+  const categoryScores =
+    typeof row.category_scores === "string" ? parseJsonSafe(row.category_scores) : row.category_scores;
+  let rawReport = row.raw_report;
+  if (typeof rawReport === "string") rawReport = parseJsonSafe(rawReport);
+  return {
+    id: row.id,
+    candidate_id: row.candidate_id,
+    overall_score: coerceScore(row.overall_score),
+    category_scores: categoryScores || {},
+    strengths: Array.isArray(row.strengths) ? row.strengths : parseJsonSafe(row.strengths) || [],
+    improvements: Array.isArray(row.improvements) ? row.improvements : parseJsonSafe(row.improvements) || [],
+    overall_feedback: row.overall_feedback || "",
+    raw_report: rawReport || null,
+    generated_at: row.generated_at || row.created_at || null,
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null,
+    metadata_hash: rawReport?.metadata?.card_hash || null,
+  };
+};
+
+const fetchReportRow = async (reportId) => {
+  const row = await db(CAREER_CARD_TABLE).where({ candidate_id: reportId }).first();
+  return normalizeDbRow(row);
+};
+
+async function storeReport({ reportId, cardHash, scoring, context, geminiResponse }) {
+  const now = db.fn.now();
   const payload = {
-    candidate_id: supabaseId,
+    candidate_id: reportId,
     overall_score: coerceScore(scoring.overallScore),
     category_scores: normalizeCategoryScores(scoring.categoryScores),
     strengths: toStringArray(scoring.strengths),
@@ -790,33 +728,27 @@ async function storeSupabaseReport({
       gemini_response: geminiResponse,
     },
     generated_at: new Date().toISOString(),
+    updated_at: now,
+    created_at: now,
   };
 
-  const resp = await fetch(`${SUPABASE_REST_BASE}/${SUPABASE_TABLE}`, {
-    method: "POST",
-    headers: {
-      ...supabaseHeaders(),
-      Prefer: "return=representation,resolution=merge-duplicates",
-    },
-    body: JSON.stringify(payload),
-  });
+  const insertData = { ...payload };
+  const updateData = { ...payload };
+  delete updateData.created_at;
 
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw ServiceError("supabase_upsert_failed", resp.status, { body });
-  }
-  const rows = await resp.json();
-  if (Array.isArray(rows) && rows[0]) {
-    return normalizeSupabaseRow(rows[0]);
-  }
+  const rows = await db(CAREER_CARD_TABLE)
+    .insert(insertData)
+    .onConflict("candidate_id")
+    .merge(updateData)
+    .returning("*");
 
-  return fetchSupabaseReportRow(supabaseId);
+  return normalizeDbRow(rows?.[0]);
 }
 
 export async function ensureCareerCardReport({ candidateId, forceRefresh = false } = {}) {
   const identifiers = normalizeCandidateIdentifier(candidateId);
   const context = await buildCandidateContext(identifiers);
-  const existing = await fetchSupabaseReportRow(identifiers.supabaseId);
+  const existing = await fetchReportRow(identifiers.reportId);
 
   if (
     existing &&
@@ -833,8 +765,8 @@ export async function ensureCareerCardReport({ candidateId, forceRefresh = false
     roleDescription: context.roleDescription,
   });
 
-  const stored = await storeSupabaseReport({
-    supabaseId: identifiers.supabaseId,
+  const stored = await storeReport({
+    reportId: identifiers.reportId,
     cardHash: context.cardHash,
     scoring,
     context,
@@ -846,8 +778,7 @@ export async function ensureCareerCardReport({ candidateId, forceRefresh = false
 
 export async function fetchCareerCardReport(candidateId) {
   const identifiers = normalizeCandidateIdentifier(candidateId);
-  const report = await fetchSupabaseReportRow(identifiers.supabaseId);
-  return report;
+  return fetchReportRow(identifiers.reportId);
 }
 
 export const __testables = {
@@ -904,47 +835,29 @@ export function calculateOverallScore(simulationScore, careerCardScore) {
 }
 
 export async function fetchCareerCardReportsBulk({ applicationIds = [] } = {}) {
-  if (!hasSupabaseConfig() || !Array.isArray(applicationIds) || !applicationIds.length) {
+  if (!Array.isArray(applicationIds) || !applicationIds.length) {
     return new Map();
   }
   const map = new Map();
-  const supabaseIds = [];
-  const appIdBySup = new Map();
+  const reportIds = [];
+  const appIdByReport = new Map();
 
   for (const appId of applicationIds) {
     const identifiers = normalizeCandidateIdentifier(appId);
-    supabaseIds.push(identifiers.supabaseId);
-    appIdBySup.set(identifiers.supabaseId, String(appId));
+    reportIds.push(identifiers.reportId);
+    appIdByReport.set(identifiers.reportId, String(appId));
   }
 
-  try {
-    const url = new URL(`${SUPABASE_REST_BASE}/${SUPABASE_TABLE}`);
-    url.searchParams.set("select", "*");
-    if (supabaseIds.length === 1) {
-      url.searchParams.set("candidate_id", `eq.${supabaseIds[0]}`);
-    } else {
-      url.searchParams.set("candidate_id", `in.(${supabaseIds.join(",")})`);
-    }
-    url.searchParams.set("limit", String(supabaseIds.length));
+  const rows = await db(CAREER_CARD_TABLE)
+    .select("*")
+    .whereIn("candidate_id", reportIds);
 
-    const resp = await fetch(url.toString(), {
-      method: "GET",
-      headers: supabaseHeaders(),
-    });
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => "");
-      throw new Error(`supabase_fetch_failed ${resp.status} ${body}`);
-    }
-    const rows = await resp.json();
-    for (const row of Array.isArray(rows) ? rows : []) {
-      const normalized = normalizeSupabaseRow(row);
-      if (!normalized?.candidate_id) continue;
-      const appKey = appIdBySup.get(normalized.candidate_id);
-      if (!appKey) continue;
-      map.set(appKey, normalized);
-    }
-  } catch (err) {
-    console.warn("[careerCardReports] bulk fetch failed", err?.message || err);
+  for (const row of rows) {
+    const normalized = normalizeDbRow(row);
+    if (!normalized?.candidate_id) continue;
+    const appKey = appIdByReport.get(normalized.candidate_id);
+    if (!appKey) continue;
+    map.set(appKey, normalized);
   }
   return map;
 }

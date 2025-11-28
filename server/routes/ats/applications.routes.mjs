@@ -14,7 +14,7 @@ import {
   fetchSimulationResponsesAndViolations,
   fetchIdentityCheck,
   computeOverallFromReport,
-} from "../../lib/supabaseAnalysis.mjs";
+} from "../../lib/simulationAnalysis.mjs";
 import { sendSimulationInviteEmail } from "../../lib/renderMail.mjs";
 import {
   __testables as careerCardTestables,
@@ -23,30 +23,13 @@ import {
   ensureCareerCardReport,
 } from "../../lib/careerCardReportService.mjs";
 
-/* ------------------------------------------------------------------------- */
-/* Simulation Edge Function config                                            */
-/* ------------------------------------------------------------------------- */
-const SIM_FUNCTION_URL = process.env.SIM_FUNCTION_URL || "";            // e.g. https://<proj>.functions.supabase.co/create-from-ats
-const SIM_ANON = process.env.SIM_SUPABASE_ANON_KEY || "";               // your VITE_SUPABASE_PUBLISHABLE_KEY
-const SIM_SECRET = process.env.SIM_WEBHOOK_SECRET || "";                // same secret you used in curl test
-
 /* Optional queue – safe to be missing locally */
 let simQueue = null;
 try {
   const maybe = await import("../../queue.mjs");
   simQueue = maybe?.simQueue || null;
 } catch { /* optional */ }
-
 const r = Router();
-
-r.get("/__sim_env", (_req, res) => {
-  res.json({
-    SIM_FUNCTION_URL: !!process.env.SIM_FUNCTION_URL,
-    SIM_SUPABASE_ANON_KEY: !!process.env.SIM_SUPABASE_ANON_KEY,
-    SIM_WEBHOOK_SECRET: !!process.env.SIM_WEBHOOK_SECRET,
-    function_url_preview: (process.env.SIM_FUNCTION_URL || "").slice(0, 80)
-  });
-});
 
 /* ------------------------------------------------------------------------- */
 /* best-effort rate-limit import with safe fallback                           */
@@ -138,26 +121,6 @@ async function buildCareerCardPayloadFromUpload(file) {
 const WorkAuthEnum = ["Authorized (no sponsorship)", "Requires sponsorship"];
 const WorkPrefEnum = ["Remote", "Hybrid", "Onsite"];
 
-const extractPublicToken = (urlValue) => {
-  if (typeof urlValue !== "string") return null;
-  let raw = urlValue.trim();
-  if (!raw) return null;
-  try {
-    const parsed = new URL(raw);
-    raw = parsed.pathname || "";
-  } catch {
-    // treat as relative URL
-  }
-  const qIdx = raw.indexOf("?");
-  if (qIdx >= 0) raw = raw.slice(0, qIdx);
-  raw = raw.replace(/[#?].*$/, "").replace(/\/+$/, "");
-  if (!raw) return null;
-  const parts = raw.split("/").filter(Boolean);
-  if (!parts.length) return null;
-  const token = parts[parts.length - 1];
-  return token || null;
-};
-
 const httpUrlSchema = z
   .preprocess((v) => (typeof v === "string" ? cleanStr(v, 255) : v),
     z.union([z.string().max(255), z.literal(""), z.undefined()]))
@@ -203,45 +166,6 @@ const ApplicationSchema = z.object({
 
   website: z.string().optional().transform((v) => (v ?? "").trim()), // honeypot
 });
-
-/* ------------------------------------------------------------------------- */
-/* Supabase Edge Function trigger helper                                     */
-/* ------------------------------------------------------------------------- */
-async function triggerSimulation({ application_id, job, company, candidate }) {
-  if (!SIM_FUNCTION_URL || !SIM_ANON || !SIM_SECRET) {
-    console.warn("[sim] missing SIM_* env, skipping trigger");
-    return null;
-  }
-
-  const payload = {
-    application_id,
-    job_id: job.id,
-    job_title: job.title,
-    job_description: job.description || "",
-    company_description: company.description || "",
-    candidate: {
-      name: candidate.name,
-      email: candidate.email,
-    },
-  };
-
-  const r = await fetch(SIM_FUNCTION_URL, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "Authorization": `Bearer ${SIM_ANON}`,
-      "apikey": SIM_ANON,
-      "x-sim-webhook-secret": SIM_SECRET,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!r.ok) {
-    const text = await r.text().catch(() => "");
-    throw new Error(`[sim] ${r.status} ${text}`);
-  }
-  return r.json(); // { ok: true, url: "https://.../sim/..." }
-}
 
 /* ------------------------------------------------------------------------- */
 /* POST /api/applications/public/:jobId                                      */
@@ -370,80 +294,6 @@ r.post(
           } catch {}
           console.error("[simQueue] add failed:", e?.message || e);
         }
-      }
-
-      // ---- Trigger the Supabase Edge Function (preferred) ----
-      try {
-        // Get org/company_description
-        const meta = await db("jobs as j")
-          .join("organizations as o", "o.id", "j.org_id")
-          .leftJoin("company_profiles as cp", "cp.id", "j.company_profile_id")
-          .where("j.id", jobId)
-          .select(
-            "j.id as job_id",
-            "j.title as job_title",
-            "j.description as job_description",
-            db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
-            db.raw("COALESCE(cp.name, o.name) as company_name")
-          )
-          .first();
-
-        const resp = await triggerSimulation({
-          application_id: applicationId,
-          job: {
-            id: meta?.job_id,
-            title: meta?.job_title,
-            description: meta?.job_description || "",
-          },
-          company: {
-            description: meta?.company_description || "",
-          },
-          candidate: {
-            name: data.candidate_name,
-            email,
-          },
-        });
-
-        if (resp?.ok && resp?.url) {
-          const token = extractPublicToken(resp.url);
-          const update = {
-            status: "ready",
-            url: resp.url,
-            updated_at: db.fn.now(),
-          };
-          if (token) {
-            update.public_token = token;
-          } else {
-            console.warn("[sim trigger] unable to parse public token from URL:", resp.url);
-          }
-          await db("simulations").where({ application_id: applicationId }).update(update);
-
-          try {
-            await sendSimulationInviteEmail({
-              candidateName: data.candidate_name,
-              candidateEmail: email,
-              jobTitle: meta?.job_title || job.title,
-              companyName: meta?.company_name || job.title || "Recrio",
-              simulationUrl: resp.url,
-            });
-          } catch (mailErr) {
-            console.error("[sim trigger] invite email failed", mailErr?.message || mailErr);
-          }
-        } else {
-          // Leave as 'pending' - you can inspect logs if something odd came back
-          await db("simulations")
-            .where({ application_id: applicationId })
-            .update({ updated_at: db.fn.now() });
-        }
-      } catch (err) {
-        console.warn("[sim trigger] failed:", err?.message || err);
-        await db("simulations")
-          .where({ application_id: applicationId })
-          .update({
-            status: "error",
-            error: String(err?.message || err),
-            updated_at: db.fn.now(),
-          });
       }
 
       const candidateReportId = String(applicationId);

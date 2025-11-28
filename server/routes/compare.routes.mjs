@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "../db.mjs";
 import { requireAuth } from "../middleware/requireAuth.mjs";
-import { fetchSimulationAnalysis } from "../lib/supabaseAnalysis.mjs";
+import { fetchSimulationAnalysis } from "../lib/simulationAnalysis.mjs";
 import { ensureCareerCardReport } from "../lib/careerCardReportService.mjs";
 
 const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();

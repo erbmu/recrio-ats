@@ -198,3 +198,19 @@ model company_profiles {
   @@unique([org_id, slug], map: "company_profiles_org_id_slug_unique")
   @@index([org_id, is_active], map: "company_profiles_org_id_is_active_idx")
 }
+
+model career_card_reports {
+  id               String   @id @default(uuid()) @db.Uuid
+  candidate_id     String   @unique @db.Uuid
+  overall_score    Decimal? @db.Decimal(5, 2)
+  category_scores  Json     @default("{}")
+  strengths        String[] @default([]) @db.Text
+  improvements     String[] @default([]) @db.Text
+  overall_feedback String?
+  raw_report       Json?
+  generated_at     DateTime @default(now()) @db.Timestamptz(6)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([generated_at], map: "career_card_reports_generated_at_idx")
+}

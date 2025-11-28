@@ -47,12 +47,12 @@ test("toStringArray strips falsy values", () => {
 
 test("normalizeCandidateIdentifier handles numeric and uuid", () => {
   const numeric = normalizeCandidateIdentifier(42);
-  assert.ok(numeric.supabaseId);
+  assert.ok(numeric.reportId);
   assert.equal(numeric.applicationId, 42);
 
   const uuid = "5e0152a3-09a2-4ffe-9390-3a4d19d1ba4a";
   const asUuid = normalizeCandidateIdentifier(uuid);
-  assert.equal(asUuid.supabaseId, uuid);
+  assert.equal(asUuid.reportId, uuid);
   assert.equal(asUuid.applicationId, null);
 
   assert.throws(() => normalizeCandidateIdentifier("not-valid"), /invalid_candidate_id/);
