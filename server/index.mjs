@@ -26,6 +26,7 @@ app.use(cors({ origin: true, credentials: false }));
 const isProd = process.env.NODE_ENV === "production";
 
 app.disable("x-powered-by");
+app.set("trust proxy", 1);
 app.use("/api/orgs/public", orgPublicRoutes);  
 
 app.use(express.json({ limit: "1mb" }));

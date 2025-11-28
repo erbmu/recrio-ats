@@ -56,15 +56,16 @@ export async function makeSimulationForApplication(applicationId) {
       updated_at: db.fn.now(),
     })
     .onConflict("application_id")
-    .merge({
-      status: "ready",
-      url,
-      public_token: token,
-      attempts: db.raw("attempts + 1"),
-      access_count: 0,
-      first_accessed_at: null,
-      last_accessed_at: null,
-      updated_at: db.fn.now(),
+    .merge((builder) => {
+      builder
+        .set("status", "ready")
+        .set("url", url)
+        .set("public_token", token)
+        .set("attempts", db.raw('"simulations"."attempts" + 1'))
+        .set("access_count", 0)
+        .set("first_accessed_at", null)
+        .set("last_accessed_at", null)
+        .set("updated_at", db.fn.now());
     });
 
   if (row.candidate_email) {

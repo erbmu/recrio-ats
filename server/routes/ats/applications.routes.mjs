@@ -31,6 +31,7 @@ try {
   simQueue = maybe?.simQueue || null;
 } catch { /* optional */ }
 const r = Router();
+r.set("trust proxy", true);
 
 /* ------------------------------------------------------------------------- */
 /* best-effort rate-limit import with safe fallback                           */
