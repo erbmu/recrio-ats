@@ -42,7 +42,7 @@ export async function makeSimulationForApplication(applicationId) {
   //    keep it minimal (only what you need to decrypt/lookup):
   const payload = String(row.application_id);
   const sig = sign(payload);
-  const token = `${payload}.${sig}`;
+  const token = `${payload}-${sig}`;
   const url = `${SIM_PUBLIC_BASE.replace(/\/+$/, "")}/sim/${token}`;
 
   // 4) persist in simulations table

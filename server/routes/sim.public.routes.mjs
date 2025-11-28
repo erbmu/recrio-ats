@@ -11,11 +11,12 @@ function sign(payload) {
 }
 
 // GET /api/sim/public/verify/:payload
-// payload looks like: "<applicationId>.<sig>"
+// payload looks like: "<applicationId>-<sig>" (legacy "." tokens also supported)
 r.get("/api/sim/public/verify/:payload", async (req, res, next) => {
   try {
     const raw = String(req.params.payload || "");
-    const [idStr, sig] = raw.split(".");
+    const delimiter = raw.includes("-") ? "-" : ".";
+    const [idStr, sig] = raw.split(delimiter);
     const applicationId = Number(idStr);
     if (!applicationId || !sig) return res.status(400).json({ error: "bad_token" });
 
