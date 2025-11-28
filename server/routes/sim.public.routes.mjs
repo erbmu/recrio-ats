@@ -1,10 +1,8 @@
 // server/routes/sim.public.routes.mjs
 import { Router } from "express";
-import crypto from "crypto";
 import { db } from "../db.mjs";
 
 const r = Router();
-const SIM_TOKEN_SECRET = process.env.SIM_TOKEN_SECRET || "2TIODI8er8DejevRGe52F29Xj5vMDRc_ggO3ta-N1aAVA5TBxCT2b-7Bq3rB5dwr";
 const RESOLVE_LOG_PREFIX = "[sim.resolve]";
 
 const escapeLike = (value) => {
@@ -33,10 +31,6 @@ const buildResolveQuery = (trx) =>
       "j.qualifications",
       "o.company_description"
     );
-
-function sign(payload) {
-  return crypto.createHmac("sha256", SIM_TOKEN_SECRET).update(payload).digest("base64url");
-}
 
 // GET /api/sim/public/resolve/:token
 r.get("/api/sim/public/resolve/:token", async (req, res, next) => {
@@ -172,34 +166,60 @@ r.get("/api/sim/public/resolve/:token", async (req, res, next) => {
 });
 
 // GET /api/sim/public/verify/:payload
-// payload looks like: "<applicationId>-<sig>" (legacy "." tokens also supported)
+// payload looks like: "<applicationId>-<randomSuffix>" (legacy "." HMAC tokens also supported)
 r.get("/api/sim/public/verify/:payload", async (req, res, next) => {
   try {
-    const raw = String(req.params.payload || "");
-    const delimiter = raw.includes("-") ? "-" : ".";
-    const [idStr, sig] = raw.split(delimiter);
+    const raw = String(req.params.payload || "").trim();
+    if (!raw) return res.status(400).json({ error: "bad_token" });
+
+    const delimiter = raw.includes("-") ? "-" : raw.includes(".") ? "." : null;
+    if (!delimiter) return res.status(400).json({ error: "bad_token" });
+
+    const [idStr] = raw.split(delimiter);
     const applicationId = Number(idStr);
-    if (!applicationId || !sig) return res.status(400).json({ error: "bad_token" });
+    if (!applicationId) return res.status(400).json({ error: "bad_token" });
 
-    const expected = sign(String(applicationId));
-    if (sig !== expected) return res.status(401).json({ error: "invalid_token" });
+    let row = null;
+    if (delimiter === ".") {
+      const [_, sig] = raw.split(".");
+      if (!sig) return res.status(400).json({ error: "bad_token" });
 
-    // Return only what the sim needs (no private recruiter-only fields)
-    const row = await db("applications as ap")
-      .join("jobs as j", "j.id", "ap.job_id")
-      .join("organizations as o", "o.id", "j.org_id")
-      .where("ap.id", applicationId)
-      .select(
-        "ap.id as application_id",
-        "ap.candidate_name",
-        "ap.candidate_email",
-        "j.id as job_id",
-        "j.title as job_title",
-        "j.description as job_description",
-        "j.qualifications",
-        "o.company_description"
-      )
-      .first();
+      row = await db("applications as ap")
+        .join("jobs as j", "j.id", "ap.job_id")
+        .join("organizations as o", "o.id", "j.org_id")
+        .where("ap.id", applicationId)
+        .select(
+          "ap.id as application_id",
+          "ap.candidate_name",
+          "ap.candidate_email",
+          "j.id as job_id",
+          "j.title as job_title",
+          "j.description as job_description",
+          "j.qualifications",
+          "o.company_description"
+        )
+        .first();
+
+      if (!row) return res.status(404).json({ error: "not_found" });
+    } else {
+      row = await db("simulations as sim")
+        .join("applications as ap", "ap.id", "sim.application_id")
+        .join("jobs as j", "j.id", "ap.job_id")
+        .join("organizations as o", "o.id", "j.org_id")
+        .where("sim.public_token", raw)
+        .select(
+          "ap.id as application_id",
+          "ap.candidate_name",
+          "ap.candidate_email",
+          "j.id as job_id",
+          "j.title as job_title",
+          "j.description as job_description",
+          "j.qualifications",
+          "o.company_description"
+        )
+        .first();
+      if (!row) return res.status(401).json({ error: "invalid_token" });
+    }
 
     if (!row) return res.status(404).json({ error: "not_found" });
 

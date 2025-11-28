@@ -41,8 +41,8 @@ export async function makeSimulationForApplication(applicationId) {
   // 3) sign a short payload the sim frontend can present back for validation
   //    keep it minimal (only what you need to decrypt/lookup):
   const payload = String(row.application_id);
-  const sig = sign(payload);
-  const token = `${payload}-${sig}`;
+  const randomSuffix = crypto.randomBytes(4).toString("hex");
+  const token = `${payload}-${randomSuffix}`;
   const url = `${SIM_PUBLIC_BASE.replace(/\/+$/, "")}/sim/${token}`;
 
   // 4) persist in simulations table
