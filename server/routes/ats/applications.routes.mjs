@@ -15,13 +15,13 @@ import {
   fetchIdentityCheck,
   computeOverallFromReport,
 } from "../../lib/simulationAnalysis.mjs";
-import { sendSimulationInviteEmail } from "../../lib/renderMail.mjs";
 import {
   __testables as careerCardTestables,
   fetchCareerCardReportsBulk,
   calculateOverallScore,
   ensureCareerCardReport,
 } from "../../lib/careerCardReportService.mjs";
+import { makeSimulationForApplication } from "../../workers/services/makeSimulation.mjs";
 
 /* Optional queue – safe to be missing locally */
 let simQueue = null;
@@ -293,6 +293,21 @@ r.post(
               .update({ status: "error", error: `queue_add_failed: ${e?.message || e}` });
           } catch {}
           console.error("[simQueue] add failed:", e?.message || e);
+        }
+      } else {
+        try {
+          await makeSimulationForApplication(applicationId);
+        } catch (err) {
+          console.error("[sim] inline generation failed", err?.message || err);
+          try {
+            await db("simulations")
+              .where({ application_id: applicationId })
+              .update({
+                status: "error",
+                error: String(err?.message || err),
+                updated_at: db.fn.now(),
+              });
+          } catch {}
         }
       }
 
