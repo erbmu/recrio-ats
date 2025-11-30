@@ -13,6 +13,7 @@ import {
   fetchSimulationAnalysis,
   fetchSimulationResponsesAndViolations,
   fetchIdentityCheck,
+  fetchSimulationArtifacts,
   computeOverallFromReport,
   getSimulationRunColumns,
 } from "../../lib/simulationAnalysis.mjs";
@@ -634,6 +635,54 @@ r.get("/:id", requireAuth(), async (req, res, next) => {
       career_card_candidate_id: String(a.id),
     });
 
+  } catch (e) {
+    return next(e);
+  }
+});
+
+/* ------------------------------------------------------------------------- */
+/* GET /api/applications/:id/simulation/artifacts                            */
+/* ------------------------------------------------------------------------- */
+r.get("/:id/simulation/artifacts", requireAuth(), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: "bad_id" });
+    }
+
+    const row = await db("applications as ap")
+      .join("jobs as j", "j.id", "ap.job_id")
+      .leftJoin("simulations as sim", "sim.application_id", "ap.id")
+      .where("ap.id", id)
+      .select(
+        "ap.id",
+        "j.org_id",
+        "sim.external_simulation_id",
+        "sim.id as simulation_row_id"
+      )
+      .first();
+
+    if (!row || Number(row.org_id) !== Number(req.auth.orgId)) {
+      return res.status(404).json({ error: "not_found" });
+    }
+
+    const simulationKey =
+      row.external_simulation_id != null
+        ? String(row.external_simulation_id)
+        : row.simulation_row_id != null
+        ? String(row.simulation_row_id)
+        : null;
+
+    if (!simulationKey) {
+      return res.status(404).json({ error: "simulation_not_found" });
+    }
+
+    const artifacts = await fetchSimulationArtifacts({ externalSimulationId: simulationKey });
+    return res.json({
+      simulation_key: simulationKey,
+      analysis_report: artifacts.analysis_report,
+      identity: artifacts.identity,
+    });
   } catch (e) {
     return next(e);
   }

@@ -83,8 +83,20 @@ async function getIdentityColumns() {
     ]),
     selfiePath: await resolveColumn("simulation_identity_checks", ["selfie_path", "selfiePath"]),
     selfieUrl: await resolveColumn("simulation_identity_checks", ["selfie_url", "selfieUrl"]),
+    selfieData: await resolveColumn("simulation_identity_checks", [
+      "selfie_data",
+      "selfieData",
+      "selfie_base64",
+      "selfieBase64",
+    ]),
     idPath: await resolveColumn("simulation_identity_checks", ["id_path", "idPath"]),
     idUrl: await resolveColumn("simulation_identity_checks", ["id_url", "idUrl"]),
+    idData: await resolveColumn("simulation_identity_checks", [
+      "id_data",
+      "idData",
+      "id_base64",
+      "idBase64",
+    ]),
     created: await resolveColumn("simulation_identity_checks", ["created_at", "createdAt", "timestamp"]),
   };
   return identityColumnsCache;
@@ -267,10 +279,68 @@ export async function fetchIdentityCheck(simulationId) {
     pickValue(row, columns.idUrl, ["id_url"]) ||
     pickValue(row, columns.idPath, ["id_path"]);
 
+  const selfieData = pickValue(row, columns.selfieData, ["selfie_data", "selfieData"]);
+  const idData = pickValue(row, columns.idData, ["id_data", "idData"]);
+
   return {
     selfie_url: buildAssetUrl(selfie),
     id_url: buildAssetUrl(idDoc),
+    selfie_data: selfieData || null,
+    id_data: idData || null,
   };
+}
+
+export async function fetchSimulationArtifacts({ externalSimulationId, simulationId } = {}) {
+  const columns = await getSimulationRunColumns();
+  const identityColumns = await getIdentityColumns();
+
+  const resolveKey = async () => {
+    if (externalSimulationId != null) return String(externalSimulationId);
+    if (simulationId == null) return null;
+    const key = String(simulationId);
+    if (!columns?.external) return key;
+    const row = await db("simulation_runs")
+      .select(columns.external)
+      .where(tableRef("simulation_runs", columns.id || columns.external), key)
+      .first();
+    const ext = pickValue(row, columns.external, ["external_simulation_id", "externalSimulationId"]);
+    return ext != null ? String(ext) : key;
+  };
+
+  const key = await resolveKey();
+  if (!key) {
+    return {
+      analysis_report: null,
+      identity: { selfie_url: null, id_url: null, selfie_data: null, id_data: null },
+    };
+  }
+
+  let analysisReport = null;
+  if (columns?.external && columns?.report) {
+    const runRow = await db("simulation_runs")
+      .select("*")
+      .where(tableRef("simulation_runs", columns.external), key)
+      .orderBy(tableRef("simulation_runs", columns.id || columns.external), "desc")
+      .first();
+
+    if (runRow) {
+      analysisReport = pickValue(runRow, columns.report, ["analysis_report", "analysisReport", "report"]) || null;
+      if (typeof analysisReport === "string") {
+        try {
+          analysisReport = JSON.parse(analysisReport);
+        } catch {
+          /* leave string */
+        }
+      }
+    }
+  }
+
+  let identity = { selfie_url: null, id_url: null, selfie_data: null, id_data: null };
+  if (identityColumns?.external) {
+    identity = await fetchIdentityCheck(key);
+  }
+
+  return { analysis_report: analysisReport, identity };
 }
 
 export { computeOverallFromReport, getSimulationRunColumns };
