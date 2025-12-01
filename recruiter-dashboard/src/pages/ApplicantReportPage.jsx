@@ -27,6 +27,9 @@ export default function ApplicantReportPage() {
   const [app, setApp] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState("");
+  const [artifacts, setArtifacts] = React.useState(null);
+  const [artifactsErr, setArtifactsErr] = React.useState("");
+  const [loadingArtifacts, setLoadingArtifacts] = React.useState(true);
 
   React.useEffect(() => {
     let mounted = true;
@@ -44,6 +47,28 @@ export default function ApplicantReportPage() {
       }
     })();
     return () => { mounted = false; };
+  }, [applicantId]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoadingArtifacts(true);
+    setArtifacts(null);
+    setArtifactsErr("");
+    (async () => {
+      try {
+        const data = await api(`/api/applications/${applicantId}/simulation/artifacts`);
+        if (!cancelled) {
+          setArtifacts(data || null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setArtifactsErr(e.message || "Failed to load simulation artifacts");
+        }
+      } finally {
+        if (!cancelled) setLoadingArtifacts(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [applicantId]);
 
   const scores = app?.ai_scores || {};
@@ -96,6 +121,17 @@ export default function ApplicantReportPage() {
       alert(e?.message || "Failed to open file");
     }
   };
+
+  const identity = artifacts?.identity || {};
+  const buildImageSrc = (rawData, fallbackUrl) => {
+    if (rawData && typeof rawData === "string") {
+      if (rawData.startsWith("data:")) return rawData;
+      return `data:image/png;base64,${rawData}`;
+    }
+    return fallbackUrl || null;
+  };
+  const selfieSrc = buildImageSrc(identity.selfie_data, identity.selfie_url);
+  const idSrc = buildImageSrc(identity.id_data, identity.id_url);
 
   return (
     <div>
@@ -187,22 +223,78 @@ export default function ApplicantReportPage() {
           </div>
 
           {/* Simulation Summary */}
-          <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Simulation Report</h2>
+          <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm space-y-6">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800 mb-4">Simulation Report</h2>
 
-            {/* Long summary from the latest run (optional) */}
-            {app.simulation?.summary ? (
-              <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
-                {app.simulation.summary}
-              </p>
-            ) : (
-              <p className="text-gray-700 text-sm leading-relaxed">
-                The applicant’s simulation breakdown and transcripts will appear here when your
-                simulation pipeline posts results. Until then, the category-wise scores above serve
-                as the summary.
-              </p>
-            )}
+              {/* Long summary from the latest run (optional) */}
+              {app.simulation?.summary ? (
+                <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
+                  {app.simulation.summary}
+                </p>
+              ) : (
+                <p className="text-gray-700 text-sm leading-relaxed">
+                  The applicant’s simulation breakdown and transcripts will appear here when your
+                  simulation pipeline posts results. Until then, the category-wise scores above serve
+                  as the summary.
+                </p>
+              )}
+            </div>
 
+            {/* Analysis + Identity */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Deep-dive artifacts</h3>
+              {loadingArtifacts ? (
+                <div className="text-sm text-gray-500">Loading artifacts…</div>
+              ) : artifactsErr ? (
+                <div className="text-sm text-red-600">{artifactsErr}</div>
+              ) : artifacts ? (
+                <div className="space-y-6">
+                  {artifacts.analysis_report ? (
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">Analysis report (JSON)</p>
+                      <pre className="bg-gray-50 border border-gray-200 rounded-md p-4 text-xs overflow-x-auto text-gray-800">
+                        {JSON.stringify(artifacts.analysis_report, null, 2)}
+                      </pre>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">No structured analysis report has been generated yet.</p>
+                  )}
+
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-gray-500 mb-3">Identity verification</p>
+                    {selfieSrc || idSrc ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+                          <div className="px-4 py-2 border-b border-gray-200 text-sm font-semibold text-gray-700">
+                            Selfie
+                          </div>
+                          {selfieSrc ? (
+                            <img src={selfieSrc} alt="Selfie verification" className="w-full object-cover" />
+                          ) : (
+                            <p className="p-4 text-sm text-gray-500">Not provided</p>
+                          )}
+                        </div>
+                        <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+                          <div className="px-4 py-2 border-b border-gray-200 text-sm font-semibold text-gray-700">
+                            Photo ID
+                          </div>
+                          {idSrc ? (
+                            <img src={idSrc} alt="ID verification" className="w-full object-cover" />
+                          ) : (
+                            <p className="p-4 text-sm text-gray-500">Not provided</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">Identity check images are not available yet.</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">No artifacts available.</p>
+              )}
+            </div>
 
             {(app.files?.career_card || app.files?.resume) && (
               <div className="mt-6">
