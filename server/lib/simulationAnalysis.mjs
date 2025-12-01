@@ -372,7 +372,7 @@ export async function fetchSimulationArtifacts({
     externalSimulationId,
     simulationId,
     applicationId,
-    resolvedExternalId,
+    resolvedExternalId: resolvedExternalIdRaw,
   });
 
   async function lookupIdentity(candidate) {
