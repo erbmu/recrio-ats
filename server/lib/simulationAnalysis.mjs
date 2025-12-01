@@ -296,6 +296,27 @@ export async function fetchIdentityCheck(simulationId) {
   };
 }
 
+const toStringOrNull = (value) => (value != null ? String(value) : null);
+const coerceQueryValue = (value) => {
+  if (value == null) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "bigint") {
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber)) return asNumber;
+    return value.toString();
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric) && String(numeric) === trimmed) {
+      return numeric;
+    }
+    return trimmed;
+  }
+  return value;
+};
+
 export async function fetchSimulationArtifacts({
   externalSimulationId,
   simulationId,
@@ -303,21 +324,20 @@ export async function fetchSimulationArtifacts({
 } = {}) {
   const columns = await getSimulationRunColumns();
   const identityColumns = await getIdentityColumns();
-  const normalized = (value) => (value != null ? String(value) : null);
 
-  let resolvedExternalId = normalized(externalSimulationId);
+  let resolvedExternalIdRaw = toStringOrNull(externalSimulationId);
+  const applicationIdValue = coerceQueryValue(applicationId);
   let analysisReport = null;
 
   const buildRunQuery = () => {
     const q = db("simulation_runs").select("*");
-    if (resolvedExternalId && columns?.external) {
-      q.where(tableRef("simulation_runs", columns.external), resolvedExternalId);
+    const externalQueryValue = coerceQueryValue(resolvedExternalIdRaw);
+    if (externalQueryValue != null && columns?.external) {
+      q.where(tableRef("simulation_runs", columns.external), externalQueryValue);
     } else if (applicationId != null && columns?.application) {
-      q.where(tableRef("simulation_runs", columns.application), normalized(applicationId));
-    } else if (simulationId != null && columns?.id) {
-      q.where(tableRef("simulation_runs", columns.id), normalized(simulationId));
+      q.where(tableRef("simulation_runs", columns.application), applicationIdValue);
     } else if (applicationId != null) {
-      q.where("application_id", normalized(applicationId));
+      q.where("application_id", applicationIdValue);
     }
     return q;
   };
@@ -331,9 +351,9 @@ export async function fetchSimulationArtifacts({
       .first();
 
     if (runRow) {
-      if (!resolvedExternalId && columns?.external) {
+      if (!resolvedExternalIdRaw && columns?.external) {
         const ext = pickValue(runRow, columns.external, ["external_simulation_id", "externalSimulationId"]);
-        if (ext != null) resolvedExternalId = String(ext);
+        if (ext != null) resolvedExternalIdRaw = String(ext);
       }
       analysisReport = pickValue(runRow, columns?.report, ["analysis_report", "analysisReport", "report"]) || null;
       if (typeof analysisReport === "string") {
@@ -355,19 +375,19 @@ export async function fetchSimulationArtifacts({
     resolvedExternalId,
   });
 
-  async function lookupIdentity(key) {
-    if (!identityColumns?.external || !key) return null;
+  async function lookupIdentity(candidate) {
+    if (!identityColumns?.external || !candidate?.queryValue) return null;
     try {
       const row = await db("simulation_identity_checks")
         .select("*")
-        .where(tableRef("simulation_identity_checks", identityColumns.external), key)
+        .where(tableRef("simulation_identity_checks", identityColumns.external), candidate.queryValue)
         .orderBy(
           tableRef("simulation_identity_checks", identityColumns.created || "created_at"),
           "desc"
         )
         .first();
       if (!row) {
-        debugLog("identity lookup miss", { key });
+        debugLog("identity lookup miss", { key: candidate.label });
         return null;
       }
       const selfie =
@@ -382,31 +402,49 @@ export async function fetchSimulationArtifacts({
         selfie_data: pickValue(row, identityColumns.selfieData, ["selfie_data", "selfieData"]) || null,
         id_data: pickValue(row, identityColumns.idData, ["id_data", "idData"]) || null,
       };
-      debugLog("identity lookup hit", { key, hasSelfie: !!payload.selfie_url || !!payload.selfie_data, hasId: !!payload.id_url || !!payload.id_data });
+      debugLog("identity lookup hit", {
+        key: candidate.label,
+        hasSelfie: !!payload.selfie_url || !!payload.selfie_data,
+        hasId: !!payload.id_url || !!payload.id_data,
+      });
       return payload;
-    } catch {
+    } catch (err) {
+      debugLog("identity lookup error", { key: candidate?.label, error: err?.message || err });
       return null;
     }
   }
+  const identityCandidates = [];
+  const seenIdentityLabels = new Set();
+  const pushIdentityKey = (raw) => {
+    if (raw == null) return;
+    const label = String(raw);
+    if (!label || seenIdentityLabels.has(label)) return;
+    seenIdentityLabels.add(label);
+    identityCandidates.push({
+      label,
+      queryValue: coerceQueryValue(raw),
+    });
+  };
 
-  const identityKeys = [
-    resolvedExternalId,
-    normalized(simulationId),
-  ]
-    .map((val) => (val != null ? String(val) : null))
-    .filter((val, idx, arr) => val && arr.indexOf(val) === idx);
+  pushIdentityKey(resolvedExternalIdRaw || externalSimulationId);
+  pushIdentityKey(simulationId);
 
   let identity = { selfie_url: null, id_url: null, selfie_data: null, id_data: null };
-  for (const key of identityKeys) {
-    const found = await lookupIdentity(key);
+  for (const candidate of identityCandidates) {
+    const found = await lookupIdentity(candidate);
     if (found) {
       identity = found;
       break;
     }
   }
 
-  if (!identity?.selfie_url && !identity?.selfie_data && !identity?.id_url && !identity?.id_data) {
-    debugLog("identity missing", { keys: identityKeys });
+  if (
+    !identity?.selfie_url &&
+    !identity?.selfie_data &&
+    !identity?.id_url &&
+    !identity?.id_data
+  ) {
+    debugLog("identity missing", { keys: identityCandidates.map((c) => c.label) });
   }
 
   return { analysis_report: analysisReport, identity };
