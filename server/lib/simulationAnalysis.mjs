@@ -290,54 +290,102 @@ export async function fetchIdentityCheck(simulationId) {
   };
 }
 
-export async function fetchSimulationArtifacts({ externalSimulationId, simulationId } = {}) {
+export async function fetchSimulationArtifacts({
+  externalSimulationId,
+  simulationId,
+  applicationId,
+} = {}) {
   const columns = await getSimulationRunColumns();
   const identityColumns = await getIdentityColumns();
+  const normalized = (value) => (value != null ? String(value) : null);
 
-  const resolveKey = async () => {
-    if (externalSimulationId != null) return String(externalSimulationId);
-    if (simulationId == null) return null;
-    const key = String(simulationId);
-    if (!columns?.external) return key;
-    const row = await db("simulation_runs")
-      .select(columns.external)
-      .where(tableRef("simulation_runs", columns.id || columns.external), key)
-      .first();
-    const ext = pickValue(row, columns.external, ["external_simulation_id", "externalSimulationId"]);
-    return ext != null ? String(ext) : key;
+  let resolvedExternalId = normalized(externalSimulationId);
+  let analysisReport = null;
+
+  const buildRunQuery = () => {
+    const q = db("simulation_runs").select("*");
+    if (resolvedExternalId && columns?.external) {
+      q.where(tableRef("simulation_runs", columns.external), resolvedExternalId);
+    } else if (applicationId != null && columns?.application) {
+      q.where(tableRef("simulation_runs", columns.application), normalized(applicationId));
+    } else if (simulationId != null && columns?.id) {
+      q.where(tableRef("simulation_runs", columns.id), normalized(simulationId));
+    } else if (applicationId != null) {
+      q.where("application_id", normalized(applicationId));
+    }
+    return q;
   };
 
-  const key = await resolveKey();
-  if (!key) {
-    return {
-      analysis_report: null,
-      identity: { selfie_url: null, id_url: null, selfie_data: null, id_data: null },
-    };
-  }
-
-  let analysisReport = null;
-  if (columns?.external && columns?.report) {
-    const runRow = await db("simulation_runs")
-      .select("*")
-      .where(tableRef("simulation_runs", columns.external), key)
-      .orderBy(tableRef("simulation_runs", columns.id || columns.external), "desc")
+  try {
+    const runRow = await buildRunQuery()
+      .orderBy(
+        tableRef("simulation_runs", columns?.id || columns?.external || "id"),
+        "desc"
+      )
       .first();
 
     if (runRow) {
-      analysisReport = pickValue(runRow, columns.report, ["analysis_report", "analysisReport", "report"]) || null;
+      if (!resolvedExternalId && columns?.external) {
+        const ext = pickValue(runRow, columns.external, ["external_simulation_id", "externalSimulationId"]);
+        if (ext != null) resolvedExternalId = String(ext);
+      }
+      analysisReport = pickValue(runRow, columns?.report, ["analysis_report", "analysisReport", "report"]) || null;
       if (typeof analysisReport === "string") {
         try {
           analysisReport = JSON.parse(analysisReport);
         } catch {
-          /* leave string */
+          /* leave as string */
         }
       }
     }
+  } catch {
+    /* ignore run fetch error */
   }
 
+  async function lookupIdentity(key) {
+    if (!identityColumns?.external || !key) return null;
+    try {
+      const row = await db("simulation_identity_checks")
+        .select("*")
+        .where(tableRef("simulation_identity_checks", identityColumns.external), key)
+        .orderBy(
+          tableRef("simulation_identity_checks", identityColumns.created || "created_at"),
+          "desc"
+        )
+        .first();
+      if (!row) return null;
+      const selfie =
+        pickValue(row, identityColumns.selfieUrl, ["selfie_url"]) ||
+        pickValue(row, identityColumns.selfiePath, ["selfie_path"]);
+      const idDoc =
+        pickValue(row, identityColumns.idUrl, ["id_url"]) ||
+        pickValue(row, identityColumns.idPath, ["id_path"]);
+      return {
+        selfie_url: buildAssetUrl(selfie),
+        id_url: buildAssetUrl(idDoc),
+        selfie_data: pickValue(row, identityColumns.selfieData, ["selfie_data", "selfieData"]) || null,
+        id_data: pickValue(row, identityColumns.idData, ["id_data", "idData"]) || null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  const identityKeys = [
+    resolvedExternalId,
+    normalized(applicationId),
+    normalized(simulationId),
+  ]
+    .map((val) => (val != null ? String(val) : null))
+    .filter((val, idx, arr) => val && arr.indexOf(val) === idx);
+
   let identity = { selfie_url: null, id_url: null, selfie_data: null, id_data: null };
-  if (identityColumns?.external) {
-    identity = await fetchIdentityCheck(key);
+  for (const key of identityKeys) {
+    const found = await lookupIdentity(key);
+    if (found) {
+      identity = found;
+      break;
+    }
   }
 
   return { analysis_report: analysisReport, identity };
