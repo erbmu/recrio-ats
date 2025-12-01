@@ -77,6 +77,10 @@ const emptyToUndef = (v) => (v === "" ? undefined : v);
 const { extractTextFromPdfBuffer } = careerCardTestables;
 const MAX_PDF_TEXT_CHARS = 20000;
 const MAX_INLINE_PDF_BYTES = 5 * 1024 * 1024;
+const debugArtifacts = Boolean(process?.env?.DEBUG_SIM_ARTIFACTS);
+const routeDebug = (...args) => {
+  if (debugArtifacts) console.log("[applications.artifacts]", ...args);
+};
 
 const normalizeExtractedText = (text = "") =>
   text
@@ -673,6 +677,13 @@ r.get("/:id/simulation/artifacts", requireAuth(), async (req, res, next) => {
         ? String(row.simulation_row_id)
         : null;
 
+    routeDebug("resolved application", {
+      applicationId: id,
+      simulationKey,
+      simulationRowId: row.simulation_row_id,
+      externalSimulationId: row.external_simulation_id,
+    });
+
     if (!simulationKey) {
       return res.status(404).json({ error: "simulation_not_found" });
     }
@@ -688,6 +699,7 @@ r.get("/:id/simulation/artifacts", requireAuth(), async (req, res, next) => {
       identity: artifacts.identity,
     });
   } catch (e) {
+    routeDebug("error", { error: e?.message || e });
     return next(e);
   }
 });

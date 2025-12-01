@@ -2,6 +2,12 @@ import { db } from "../db.mjs";
 import { resolveColumn } from "./columnResolver.mjs";
 
 const tableRef = (table, column) => db.ref(`${table}.${column}`);
+const debugArtifacts = Boolean(process?.env?.DEBUG_SIM_ARTIFACTS);
+const debugLog = (...args) => {
+  if (debugArtifacts) {
+    console.log("[sim.artifacts]", ...args);
+  }
+};
 
 let simulationRunColumnsCache = null;
 async function getSimulationRunColumns() {
@@ -342,6 +348,13 @@ export async function fetchSimulationArtifacts({
     /* ignore run fetch error */
   }
 
+  debugLog("incoming", {
+    externalSimulationId,
+    simulationId,
+    applicationId,
+    resolvedExternalId,
+  });
+
   async function lookupIdentity(key) {
     if (!identityColumns?.external || !key) return null;
     try {
@@ -353,19 +366,24 @@ export async function fetchSimulationArtifacts({
           "desc"
         )
         .first();
-      if (!row) return null;
+      if (!row) {
+        debugLog("identity lookup miss", { key });
+        return null;
+      }
       const selfie =
         pickValue(row, identityColumns.selfieUrl, ["selfie_url"]) ||
         pickValue(row, identityColumns.selfiePath, ["selfie_path"]);
       const idDoc =
         pickValue(row, identityColumns.idUrl, ["id_url"]) ||
         pickValue(row, identityColumns.idPath, ["id_path"]);
-      return {
+      const payload = {
         selfie_url: buildAssetUrl(selfie),
         id_url: buildAssetUrl(idDoc),
         selfie_data: pickValue(row, identityColumns.selfieData, ["selfie_data", "selfieData"]) || null,
         id_data: pickValue(row, identityColumns.idData, ["id_data", "idData"]) || null,
       };
+      debugLog("identity lookup hit", { key, hasSelfie: !!payload.selfie_url || !!payload.selfie_data, hasId: !!payload.id_url || !!payload.id_data });
+      return payload;
     } catch {
       return null;
     }
@@ -385,6 +403,10 @@ export async function fetchSimulationArtifacts({
       identity = found;
       break;
     }
+  }
+
+  if (!identity?.selfie_url && !identity?.selfie_data && !identity?.id_url && !identity?.id_data) {
+    debugLog("identity missing", { keys: identityKeys });
   }
 
   return { analysis_report: analysisReport, identity };
