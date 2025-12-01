@@ -373,7 +373,6 @@ export async function fetchSimulationArtifacts({
 
   const identityKeys = [
     resolvedExternalId,
-    normalized(applicationId),
     normalized(simulationId),
   ]
     .map((val) => (val != null ? String(val) : null))

@@ -677,7 +677,11 @@ r.get("/:id/simulation/artifacts", requireAuth(), async (req, res, next) => {
       return res.status(404).json({ error: "simulation_not_found" });
     }
 
-    const artifacts = await fetchSimulationArtifacts({ externalSimulationId: simulationKey });
+    const artifacts = await fetchSimulationArtifacts({
+      externalSimulationId: row.external_simulation_id,
+      simulationId: row.simulation_row_id,
+      applicationId: row.id,
+    });
     return res.json({
       simulation_key: simulationKey,
       analysis_report: artifacts.analysis_report,
