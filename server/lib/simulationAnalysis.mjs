@@ -29,6 +29,12 @@ async function getSimulationRunColumns() {
     application: await resolveColumn("simulation_runs", ["application_id", "applicationId", "app_id", "appId"]),
     summary: await resolveColumn("simulation_runs", ["summary_text", "summaryText", "summary"]),
     id: await resolveColumn("simulation_runs", ["id", "ID"]),
+    simulation: await resolveColumn("simulation_runs", [
+      "simulation_id",
+      "simulationId",
+      "sim_id",
+      "simId",
+    ]),
   };
   return simulationRunColumnsCache;
 }
@@ -326,6 +332,7 @@ export async function fetchSimulationArtifacts({
   const identityColumns = await getIdentityColumns();
 
   let resolvedExternalIdRaw = toStringOrNull(externalSimulationId);
+  const simulationIdValue = coerceQueryValue(simulationId);
   const applicationIdValue = coerceQueryValue(applicationId);
   let analysisReport = null;
 
@@ -334,6 +341,8 @@ export async function fetchSimulationArtifacts({
     const externalQueryValue = coerceQueryValue(resolvedExternalIdRaw);
     if (externalQueryValue != null && columns?.external) {
       q.where(tableRef("simulation_runs", columns.external), externalQueryValue);
+    } else if (simulationIdValue != null && columns?.simulation) {
+      q.where(tableRef("simulation_runs", columns.simulation), simulationIdValue);
     } else if (applicationId != null && columns?.application) {
       q.where(tableRef("simulation_runs", columns.application), applicationIdValue);
     } else if (applicationId != null) {
