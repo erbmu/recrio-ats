@@ -20,6 +20,19 @@ const pctOrNA = (v) => {
   return `${pct}/100`;
 };
 
+const ANALYSIS_METRIC_DEFINITIONS = [
+  { label: "Startup Readiness", paths: ["overallStartupReadinessIndex", "overallScore", "scores.overallScore"] },
+  { label: "Founder Fit", paths: ["founderFitIndex", "scores.founderFitIndex"] },
+  { label: "Business Impact", paths: ["businessImpactScore", "scores.businessImpactScore"] },
+  { label: "Technical Accuracy", paths: ["technicalAccuracy", "scores.technicalAccuracy"] },
+  { label: "Adaptability", paths: ["adaptability", "scores.adaptability"] },
+  { label: "Learning Agility", paths: ["learningAgility", "scores.learningAgility"] },
+  { label: "Trade-off Analysis", paths: ["tradeOffAnalysis", "scores.tradeOffAnalysis"] },
+  { label: "Execution Bias", paths: ["biasTowardExecution", "scores.biasTowardExecution"] },
+  { label: "Communication", paths: ["communicationClarity", "scores.communicationClarity"] },
+  { label: "Creativity", paths: ["creativityInnovationIndex", "scores.creativityInnovationIndex"] },
+];
+
 export default function ApplicantReportPage() {
   const { jobId, applicantId } = useParams();
   const navigate = useNavigate();
@@ -30,6 +43,7 @@ export default function ApplicantReportPage() {
   const [artifacts, setArtifacts] = React.useState(null);
   const [artifactsErr, setArtifactsErr] = React.useState("");
   const [loadingArtifacts, setLoadingArtifacts] = React.useState(true);
+  const [showRawAnalysis, setShowRawAnalysis] = React.useState(false);
 
   React.useEffect(() => {
     let mounted = true;
@@ -123,6 +137,68 @@ export default function ApplicantReportPage() {
   };
 
   const identity = artifacts?.identity || {};
+  const violations = Array.isArray(artifacts?.violations) ? artifacts.violations : [];
+  const analysisReport = artifacts?.analysis_report && typeof artifacts.analysis_report === "object"
+    ? artifacts.analysis_report
+    : null;
+
+  const readAnalysisValue = (paths = []) => {
+    if (!analysisReport) return null;
+    for (const path of paths) {
+      const segments = path.split(".");
+      let cursor = analysisReport;
+      let found = true;
+      for (const segment of segments) {
+        if (cursor == null || typeof cursor !== "object" || !(segment in cursor)) {
+          found = false;
+          break;
+        }
+        cursor = cursor[segment];
+      }
+      if (found && cursor != null) return cursor;
+    }
+    return null;
+  };
+
+  const analysisNarrative =
+    (typeof artifacts?.analysis_report === "string" && artifacts.analysis_report) ||
+    analysisReport?.analysis ||
+    analysisReport?.summary ||
+    analysisReport?.Overview ||
+    null;
+  const rawAnalysisString = artifacts?.analysis_report
+    ? typeof artifacts.analysis_report === "string"
+      ? artifacts.analysis_report
+      : JSON.stringify(artifacts.analysis_report, null, 2)
+    : "";
+
+  const analysisMetrics = ANALYSIS_METRIC_DEFINITIONS.map((def) => ({
+    label: def.label,
+    value: readAnalysisValue(def.paths),
+  }));
+  const hasAnalysisMetrics = analysisMetrics.some((metric) => metric.value != null);
+
+  const formatScoreValue = (value) => {
+    if (value == null) return "—";
+    const n = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(n)) return "—";
+    const rounded = n <= 1 ? Math.round(n * 100) : Math.round(n);
+    return `${rounded}/100`;
+  };
+
+  const formatViolationType = (value) => {
+    if (!value) return "Integrity alert";
+    return String(value)
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
+  const formatDateTime = (value) => {
+    if (!value) return "Time unavailable";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  };
   const buildImageSrc = (rawData, fallbackUrl) => {
     if (rawData && typeof rawData === "string") {
       if (rawData.startsWith("data:")) return rawData;
@@ -249,19 +325,54 @@ export default function ApplicantReportPage() {
               ) : artifactsErr ? (
                 <div className="text-sm text-red-600">{artifactsErr}</div>
               ) : artifacts ? (
-                <div className="space-y-6">
-                  {artifacts.analysis_report ? (
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">Analysis report (JSON)</p>
-                      <pre className="bg-gray-50 border border-gray-200 rounded-md p-4 text-xs overflow-x-auto text-gray-800">
-                        {JSON.stringify(artifacts.analysis_report, null, 2)}
-                      </pre>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-500">No structured analysis report has been generated yet.</p>
-                  )}
+                <div className="space-y-8">
+                  <section className="space-y-4">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">Simulation insights</p>
+                    {analysisReport || analysisNarrative ? (
+                      <>
+                        {analysisNarrative && (
+                          <div className="rounded-xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white p-4 text-sm leading-relaxed text-gray-800 shadow-inner">
+                            {analysisNarrative}
+                          </div>
+                        )}
+                        {hasAnalysisMetrics && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {analysisMetrics.map((metric) => (
+                              <div
+                                key={metric.label}
+                                className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm"
+                              >
+                                <p className="text-xs uppercase tracking-wide text-gray-500">{metric.label}</p>
+                                <p className="text-lg font-semibold text-gray-900 mt-1">
+                                  {formatScoreValue(metric.value)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {rawAnalysisString && (
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => setShowRawAnalysis((prev) => !prev)}
+                              className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                            >
+                              {showRawAnalysis ? "Hide raw analysis JSON" : "View raw analysis JSON"}
+                            </button>
+                            {showRawAnalysis && (
+                              <pre className="mt-2 bg-gray-50 border border-gray-200 rounded-md p-4 text-xs overflow-x-auto text-gray-800">
+                                {rawAnalysisString}
+                              </pre>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-gray-500">No structured analysis report has been generated yet.</p>
+                    )}
+                  </section>
 
-                  <div>
+                  <section>
                     <p className="text-xs uppercase tracking-wide text-gray-500 mb-3">Identity verification</p>
                     {selfieSrc || idSrc ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -289,7 +400,35 @@ export default function ApplicantReportPage() {
                     ) : (
                       <p className="text-sm text-gray-500">Identity check images are not available yet.</p>
                     )}
-                  </div>
+                  </section>
+
+                  <section>
+                    <p className="text-xs uppercase tracking-wide text-gray-500 mb-3">Integrity monitoring</p>
+                    {violations.length ? (
+                      <ul className="space-y-3">
+                        {violations.map((violation, idx) => (
+                          <li
+                            key={violation.id || `${violation.type}-${idx}`}
+                            className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                          >
+                            <p className="font-semibold">{formatViolationType(violation.type)}</p>
+                            <p className="text-xs text-amber-800 mt-0.5">{formatDateTime(violation.created_at)}</p>
+                            {violation.meta && (
+                              <p className="mt-1 text-xs text-amber-900">
+                                {typeof violation.meta === "string"
+                                  ? violation.meta
+                                  : JSON.stringify(violation.meta)}
+                              </p>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                        Candidate completed the simulation with no reported proctoring violations.
+                      </div>
+                    )}
+                  </section>
                 </div>
               ) : (
                 <p className="text-sm text-gray-500">No artifacts available.</p>

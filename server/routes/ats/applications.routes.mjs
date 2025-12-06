@@ -697,6 +697,7 @@ r.get("/:id/simulation/artifacts", requireAuth(), async (req, res, next) => {
       simulation_key: simulationKey,
       analysis_report: artifacts.analysis_report,
       identity: artifacts.identity,
+      violations: artifacts.violations || [],
     });
   } catch (e) {
     routeDebug("error", { error: e?.message || e });

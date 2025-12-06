@@ -438,6 +438,21 @@ export async function fetchSimulationArtifacts({
     }
   }
 
+  let violations = [];
+  const primaryViolationKey = identityCandidates[0]?.label || toStringOrNull(simulationId);
+  if (primaryViolationKey) {
+    try {
+      const { violations: list } = await fetchSimulationResponsesAndViolations(primaryViolationKey);
+      if (Array.isArray(list)) {
+        violations = list;
+      }
+    } catch (err) {
+      debugLog("violations fetch error", { key: primaryViolationKey, error: err?.message || err });
+    }
+  } else {
+    debugLog("violations skip — no key");
+  }
+
   if (
     !identity?.selfie_url &&
     !identity?.selfie_data &&
@@ -447,7 +462,7 @@ export async function fetchSimulationArtifacts({
     debugLog("identity missing", { keys: identityCandidates.map((c) => c.label) });
   }
 
-  return { analysis_report: analysisReport, identity };
+  return { analysis_report: analysisReport, identity, violations };
 }
 
 export { computeOverallFromReport, getSimulationRunColumns };
