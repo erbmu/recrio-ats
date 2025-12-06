@@ -303,10 +303,9 @@ export default function ApplicantReportPage() {
             <div>
               <h2 className="text-lg font-semibold text-gray-800 mb-4">Simulation Report</h2>
 
-              {/* Long summary from the latest run (optional) */}
-              {app.simulation?.summary ? (
+              {(app.simulation?.summary || analysisNarrative || simSummary) ? (
                 <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
-                  {app.simulation.summary}
+                  {app.simulation?.summary || analysisNarrative || simSummary}
                 </p>
               ) : (
                 <p className="text-gray-700 text-sm leading-relaxed">

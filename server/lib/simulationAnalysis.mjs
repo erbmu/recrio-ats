@@ -303,24 +303,36 @@ export async function fetchIdentityCheck(simulationId) {
 }
 
 const toStringOrNull = (value) => (value != null ? String(value) : null);
-const coerceQueryValue = (value) => {
+const buildQueryCandidates = (raw) => {
+  const label = toStringOrNull(raw);
+  if (!label) return null;
+  const trimmed = label.trim();
+  if (!trimmed) return null;
+  const values = [trimmed];
+  if (/^-?\d+$/.test(trimmed)) {
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) {
+      values.push(numeric);
+    }
+  }
+  return { label: trimmed, values: [...new Set(values)] };
+};
+const coerceNumeric = (value) => {
   if (value == null) return null;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value === "bigint") {
     const asNumber = Number(value);
-    if (Number.isFinite(asNumber)) return asNumber;
-    return value.toString();
+    return Number.isFinite(asNumber) ? asNumber : null;
   }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    const numeric = Number(trimmed);
-    if (Number.isFinite(numeric) && String(numeric) === trimmed) {
-      return numeric;
-    }
-    return trimmed;
+  if (typeof value === "string" && /^-?\d+$/.test(value.trim())) {
+    const numeric = Number(value.trim());
+    return Number.isFinite(numeric) ? numeric : null;
   }
-  return value;
+  return null;
+};
+const applyCandidateWhere = (query, columnReference, candidates) => {
+  if (!candidates?.values?.length || !columnReference) return query;
+  return query.whereIn(columnReference, candidates.values);
 };
 
 export async function fetchSimulationArtifacts({
@@ -332,21 +344,33 @@ export async function fetchSimulationArtifacts({
   const identityColumns = await getIdentityColumns();
 
   let resolvedExternalIdRaw = toStringOrNull(externalSimulationId);
-  const simulationIdValue = coerceQueryValue(simulationId);
-  const applicationIdValue = coerceQueryValue(applicationId);
+  let externalCandidates = buildQueryCandidates(resolvedExternalIdRaw);
+  const simulationIdCandidates = buildQueryCandidates(simulationId);
+  const applicationIdValue = coerceNumeric(applicationId);
   let analysisReport = null;
 
   const buildRunQuery = () => {
     const q = db("simulation_runs").select("*");
-    const externalQueryValue = coerceQueryValue(resolvedExternalIdRaw);
-    if (externalQueryValue != null && columns?.external) {
-      q.where(tableRef("simulation_runs", columns.external), externalQueryValue);
-    } else if (simulationIdValue != null && columns?.simulation) {
-      q.where(tableRef("simulation_runs", columns.simulation), simulationIdValue);
+    if (externalCandidates && columns?.external) {
+      applyCandidateWhere(q, tableRef("simulation_runs", columns.external), externalCandidates);
+    } else if (simulationIdCandidates && columns?.simulation) {
+      applyCandidateWhere(q, tableRef("simulation_runs", columns.simulation), simulationIdCandidates);
     } else if (applicationId != null && columns?.application) {
-      q.where(tableRef("simulation_runs", columns.application), applicationIdValue);
+      if (applicationIdValue != null) {
+        q.where(tableRef("simulation_runs", columns.application), applicationIdValue);
+      } else {
+        applyCandidateWhere(
+          q,
+          tableRef("simulation_runs", columns.application),
+          buildQueryCandidates(applicationId)
+        );
+      }
     } else if (applicationId != null) {
-      q.where("application_id", applicationIdValue);
+      if (applicationIdValue != null) {
+        q.where("application_id", applicationIdValue);
+      } else {
+        applyCandidateWhere(q, "application_id", buildQueryCandidates(applicationId));
+      }
     }
     return q;
   };
@@ -362,7 +386,10 @@ export async function fetchSimulationArtifacts({
     if (runRow) {
       if (!resolvedExternalIdRaw && columns?.external) {
         const ext = pickValue(runRow, columns.external, ["external_simulation_id", "externalSimulationId"]);
-        if (ext != null) resolvedExternalIdRaw = String(ext);
+        if (ext != null) {
+          resolvedExternalIdRaw = String(ext);
+          externalCandidates = buildQueryCandidates(resolvedExternalIdRaw);
+        }
       }
       analysisReport = pickValue(runRow, columns?.report, ["analysis_report", "analysisReport", "report"]) || null;
       if (typeof analysisReport === "string") {
@@ -385,11 +412,11 @@ export async function fetchSimulationArtifacts({
   });
 
   async function lookupIdentity(candidate) {
-    if (!identityColumns?.external || !candidate?.queryValue) return null;
+    if (!identityColumns?.external || !candidate?.values?.length) return null;
     try {
       const row = await db("simulation_identity_checks")
         .select("*")
-        .where(tableRef("simulation_identity_checks", identityColumns.external), candidate.queryValue)
+        .whereIn(tableRef("simulation_identity_checks", identityColumns.external), candidate.values)
         .orderBy(
           tableRef("simulation_identity_checks", identityColumns.created || "created_at"),
           "desc"
@@ -425,14 +452,10 @@ export async function fetchSimulationArtifacts({
   const identityCandidates = [];
   const seenIdentityLabels = new Set();
   const pushIdentityKey = (raw) => {
-    if (raw == null) return;
-    const label = String(raw);
-    if (!label || seenIdentityLabels.has(label)) return;
-    seenIdentityLabels.add(label);
-    identityCandidates.push({
-      label,
-      queryValue: coerceQueryValue(raw),
-    });
+    const candidate = buildQueryCandidates(raw);
+    if (!candidate || seenIdentityLabels.has(candidate.label)) return;
+    seenIdentityLabels.add(candidate.label);
+    identityCandidates.push(candidate);
   };
 
   pushIdentityKey(resolvedExternalIdRaw || externalSimulationId);
