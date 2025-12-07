@@ -59,6 +59,7 @@ const CreateSchema = z.object({
     (v) => (v == null || v === "" ? undefined : Number(v)),
     z.number().int().positive().optional()
   ),
+  companyDescription: z.preprocess((v) => cleanStr(v, 20000), z.string().optional().default("")),
 });
 
 const r = Router();
@@ -162,7 +163,16 @@ r.post("/", requireAuth(), async (req, res, next) => {
       const msg = parsed.error.issues?.[0]?.message || "Invalid payload";
       return res.status(400).json({ error: msg });
     }
-    const { title, description, qualifications, workType, employmentType, location, salary } = parsed.data;
+    const {
+      title,
+      description,
+      qualifications,
+      workType,
+      employmentType,
+      location,
+      salary,
+      companyDescription,
+    } = parsed.data;
     let { companyProfileId } = parsed.data;
 
     const orgId = req.auth.orgId;
@@ -180,6 +190,15 @@ r.post("/", requireAuth(), async (req, res, next) => {
       }
       companyProfileId = owned.id;
     }
+
+    const profileMeta =
+      (defaultProfile && defaultProfile.id === companyProfileId ? defaultProfile : null) ||
+      (companyProfileId
+        ? await db("company_profiles").where({ id: companyProfileId }).first()
+        : null);
+    const effectiveCompanyDescription =
+      (companyDescription && companyDescription.trim()) ||
+      (profileMeta?.description ? cleanStr(profileMeta.description, 20000) : "");
 
     let slug = await makeUniqueSlugGlobal(title);
     let tok = newToken();
@@ -203,6 +222,7 @@ r.post("/", requireAuth(), async (req, res, next) => {
             published_at: db.fn.now(),
             applicants: 0,
             company_profile_id: companyProfileId,
+            company_description: effectiveCompanyDescription || null,
           })
           .returning([
             "id",
@@ -219,10 +239,6 @@ r.post("/", requireAuth(), async (req, res, next) => {
             "salary",
             "created_at",
           ]);
-
-        const profileMeta =
-          (defaultProfile && defaultProfile.id === companyProfileId ? defaultProfile : null) ||
-          (await db("company_profiles").where({ id: companyProfileId }).first());
 
         return res.json({
           job: {
@@ -281,7 +297,7 @@ r.get("/public/by-token/:token", async (req, res, next) => {
         "o.slug as org_slug",
         "cp.id as company_profile_id",
         db.raw("COALESCE(cp.name, o.name) as company_name"),
-        db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
+        db.raw("COALESCE(j.company_description, cp.description, o.company_description, '') as company_description"),
         db.raw("COALESCE(cp.slug, o.slug) as company_slug")
       )
       .first();
@@ -317,7 +333,7 @@ r.get("/public/:orgSlug/:jobSlug", async (req, res, next) => {
         "o.slug as org_slug",
         "cp.id as company_profile_id",
         db.raw("COALESCE(cp.name, o.name) as company_name"),
-        db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
+        db.raw("COALESCE(j.company_description, cp.description, o.company_description, '') as company_description"),
         db.raw("COALESCE(cp.slug, o.slug) as company_slug")
       )
       .first();

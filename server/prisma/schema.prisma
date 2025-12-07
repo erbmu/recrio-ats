@@ -82,6 +82,7 @@ model jobs {
   location         String         @default("Remote")
   employment_type  String         @default("Full-time")
   description      String?
+  company_description String?
   is_published     Boolean        @default(false)
   public_url_token String?        @unique(map: "jobs_public_url_token_unique")
   published_at     DateTime?      @db.Timestamptz(6)

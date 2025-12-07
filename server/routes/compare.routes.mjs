@@ -78,7 +78,7 @@ async function buildCandidateContext({ candidateId, jobId }) {
       "ap.career_card",
       "j.title as job_title",
       "j.description as job_description",
-      db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
+      db.raw("COALESCE(j.company_description, cp.description, o.company_description, '') as company_description"),
       "sim.id as simulation_id"
     )
     .first();
@@ -115,7 +115,7 @@ router.post("/analyze", requireAuth(), async (req, res, next) => {
         "j.id",
         "j.title",
         "j.description",
-        db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
+        db.raw("COALESCE(j.company_description, cp.description, o.company_description, '') as company_description"),
         "o.id as org_id"
       )
       .first();

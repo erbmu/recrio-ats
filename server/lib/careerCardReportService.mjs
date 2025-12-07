@@ -281,7 +281,7 @@ const baseApplicationQuery = () =>
       "j.title as job_title",
       "o.id as org_id",
       db.raw("COALESCE(cp.name, o.name) as company_name"),
-      db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
+      db.raw("COALESCE(j.company_description, cp.description, o.company_description, '') as company_description"),
       db.raw("COALESCE(cp.description, o.company_description, '') as org_description")
     );
 
@@ -314,7 +314,7 @@ async function fetchApplicationForCandidate({ applicationId, reportId }) {
         "j.title as job_title",
         "o.id as org_id",
         db.raw("COALESCE(cp.name, o.name) as company_name"),
-        db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
+        db.raw("COALESCE(j.company_description, cp.description, o.company_description, '') as company_description"),
         db.raw("COALESCE(cp.description, o.company_description, '') as org_description")
       )
       .first();

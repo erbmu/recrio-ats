@@ -28,7 +28,7 @@ export async function makeSimulationForApplication(applicationId) {
       "j.title as job_title",
       "j.description as job_description",
       "j.qualifications",
-      db.raw("COALESCE(cp.description, o.company_description, '') as company_description"),
+      db.raw("COALESCE(j.company_description, cp.description, o.company_description, '') as company_description"),
       db.raw("COALESCE(cp.name, o.name) as company_name")
     )
     .first();

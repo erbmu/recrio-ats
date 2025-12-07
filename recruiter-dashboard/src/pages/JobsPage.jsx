@@ -70,6 +70,7 @@ const JobsPage = () => {
     employmentType: "",
     location: "",
     salary: "",
+    companyDescription: "",
   });
   const [errors, setErrors] = useState({});
   const [errMsg, setErrMsg] = useState("");
@@ -352,8 +353,16 @@ const JobsPage = () => {
     const { name, value } = e.target;
     let v = value;
     if (name === "salary") v = normalizeSalaryRange(v);
+    else if (name === "companyDescription") v = clampLength(v, 20000);
     else v = clampLength(v, name === "title" ? 120 : 4000);
     setNewJob((p) => ({ ...p, [name]: v }));
+  };
+
+  const handleUseProfileDescription = () => {
+    setNewJob((prev) => ({
+      ...prev,
+      companyDescription: clampLength(activeProfile?.description || "", 20000),
+    }));
   };
 
   const validate = () => {
@@ -387,6 +396,7 @@ const JobsPage = () => {
         location: newJob.location.trim(),
         salary: newJob.salary.trim(),
         companyProfileId: activeProfile?.id || undefined,
+        companyDescription: newJob.companyDescription.trim(),
       };
       const res = await api("jobs", { method: "POST", body: payload });
       const j = res.job;
@@ -424,6 +434,7 @@ const JobsPage = () => {
         employmentType: "",
         location: "",
         salary: "",
+        companyDescription: "",
       });
     } catch (e2) {
       setErrMsg(e2.message || "Failed to create job");
@@ -649,6 +660,35 @@ const JobsPage = () => {
               placeholder="Role overview, responsibilities, and impact…"
             />
             {errors.description && <p className="text-xs text-red-600 mt-1">{errors.description}</p>}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <label htmlFor="companyDescription" className="block text-sm font-medium text-gray-700">
+                Company Description (Optional override)
+              </label>
+              <button
+                type="button"
+                onClick={handleUseProfileDescription}
+                className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                disabled={!activeProfile?.description}
+              >
+                Use {activeProfile?.name || "org"} description
+              </button>
+            </div>
+            <textarea
+              id="companyDescription"
+              name="companyDescription"
+              value={newJob.companyDescription}
+              onChange={update}
+              rows={4}
+              maxLength={20000}
+              className="mt-1 w-full border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+              placeholder="Override the default company description for this posting…"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Leave blank to inherit from the selected company profile or org settings.
+            </p>
           </div>
 
           <div>

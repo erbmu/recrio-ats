@@ -29,7 +29,7 @@ const buildResolveQuery = (trx) =>
       "j.title as job_title",
       "j.description as job_description",
       "j.qualifications",
-      "o.company_description"
+      db.raw("COALESCE(j.company_description, o.company_description) as company_description")
     );
 
 // GET /api/sim/public/resolve/:token
@@ -196,7 +196,7 @@ r.get("/api/sim/public/verify/:payload", async (req, res, next) => {
           "j.title as job_title",
           "j.description as job_description",
           "j.qualifications",
-          "o.company_description"
+          db.raw("COALESCE(j.company_description, o.company_description) as company_description")
         )
         .first();
 
@@ -215,7 +215,7 @@ r.get("/api/sim/public/verify/:payload", async (req, res, next) => {
           "j.title as job_title",
           "j.description as job_description",
           "j.qualifications",
-          "o.company_description"
+          db.raw("COALESCE(j.company_description, o.company_description) as company_description")
         )
         .first();
       if (!row) return res.status(401).json({ error: "invalid_token" });
