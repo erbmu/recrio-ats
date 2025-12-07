@@ -349,6 +349,20 @@ export async function fetchSimulationArtifacts({
   const applicationIdValue = coerceNumeric(applicationId);
   let analysisReport = null;
 
+  async function tryFetchRunByExternalId(key) {
+    if (!key) return null;
+    try {
+      return await db("simulation_runs")
+        .select("*")
+        .where("external_simulation_id", key)
+        .orderBy("id", "desc")
+        .first();
+    } catch (err) {
+      debugLog("run lookup by external_simulation_id failed", { key, error: err?.message || err });
+      return null;
+    }
+  }
+
   const buildRunQuery = () => {
     const q = db("simulation_runs").select("*");
     if (externalCandidates && columns?.external) {
@@ -375,33 +389,47 @@ export async function fetchSimulationArtifacts({
     return q;
   };
 
+  let runRow = await tryFetchRunByExternalId(resolvedExternalIdRaw);
   try {
-    const runRow = await buildRunQuery()
-      .orderBy(
-        tableRef("simulation_runs", columns?.id || columns?.external || "id"),
-        "desc"
-      )
-      .first();
+    if (!runRow) {
+      runRow = await buildRunQuery()
+        .orderBy(
+          tableRef("simulation_runs", columns?.id || columns?.external || "id"),
+          "desc"
+        )
+        .first();
+    }
+  } catch (err) {
+    debugLog("run lookup error", { error: err?.message || err });
+  }
 
-    if (runRow) {
-      if (!resolvedExternalIdRaw && columns?.external) {
-        const ext = pickValue(runRow, columns.external, ["external_simulation_id", "externalSimulationId"]);
-        if (ext != null) {
-          resolvedExternalIdRaw = String(ext);
-          externalCandidates = buildQueryCandidates(resolvedExternalIdRaw);
-        }
-      }
-      analysisReport = pickValue(runRow, columns?.report, ["analysis_report", "analysisReport", "report"]) || null;
-      if (typeof analysisReport === "string") {
-        try {
-          analysisReport = JSON.parse(analysisReport);
-        } catch {
-          /* leave as string */
-        }
+  if (!runRow && !resolvedExternalIdRaw && columns?.external) {
+    // If no row yet and we never had an external key, try resolving from simulation id first.
+    runRow = await tryFetchRunByExternalId(simulationIdCandidates?.label);
+  }
+
+  if (runRow) {
+    if (!resolvedExternalIdRaw && columns?.external) {
+      const ext = pickValue(runRow, columns.external, ["external_simulation_id", "externalSimulationId"]);
+      if (ext != null) {
+        resolvedExternalIdRaw = String(ext);
+        externalCandidates = buildQueryCandidates(resolvedExternalIdRaw);
       }
     }
-  } catch {
-    /* ignore run fetch error */
+    analysisReport = pickValue(runRow, columns?.report, ["analysis_report", "analysisReport", "report"]) || null;
+    if (typeof analysisReport === "string") {
+      try {
+        analysisReport = JSON.parse(analysisReport);
+      } catch {
+        /* leave as string */
+      }
+    }
+  } else {
+    debugLog("analysis report missing", {
+      externalSimulationId,
+      simulationId,
+      applicationId,
+    });
   }
 
   debugLog("incoming", {
