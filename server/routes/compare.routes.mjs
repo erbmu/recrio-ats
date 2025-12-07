@@ -11,10 +11,17 @@ const router = Router();
 
 router.get("/jobs", requireAuth(), async (req, res, next) => {
   try {
-    const jobs = await db("jobs")
-      .where({ org_id: req.auth.orgId })
-      .orderBy("created_at", "desc")
-      .select("id", "title", "is_published");
+    const jobs = await db("jobs as j")
+      .leftJoin("company_profiles as cp", "cp.id", "j.company_profile_id")
+      .where("j.org_id", req.auth.orgId)
+      .orderBy("j.created_at", "desc")
+      .select(
+        "j.id",
+        "j.title",
+        "j.is_published",
+        "j.company_profile_id",
+        db.raw("COALESCE(cp.name, 'Organization') as company_name")
+      );
     return res.json(jobs);
   } catch (err) {
     return next(err);

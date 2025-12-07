@@ -18,7 +18,7 @@ const withBoldMarkers = (value) =>
   stringOrJson(value).replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
 
 export default function CompareView() {
-  const [jobs, setJobs] = React.useState([]);
+  const [allJobs, setAllJobs] = React.useState([]);
   const [selectedJob, setSelectedJob] = React.useState("");
   const [candidates, setCandidates] = React.useState([]);
   const [candidateA, setCandidateA] = React.useState("");
@@ -27,6 +27,35 @@ export default function CompareView() {
   const [status, setStatus] = React.useState({ loading: false, error: "", result: null });
   const [loadingJobs, setLoadingJobs] = React.useState(true);
   const [loadingCandidates, setLoadingCandidates] = React.useState(false);
+  const [me, setMe] = React.useState(null);
+  const isAgency = React.useMemo(
+    () => (me?.recruiter_type || me?.recruiterType) === "agency",
+    [me]
+  );
+  const [companies, setCompanies] = React.useState([]);
+  const [companiesLoading, setCompaniesLoading] = React.useState(false);
+  const [companiesError, setCompaniesError] = React.useState("");
+  const [selectedCompanyId, setSelectedCompanyId] = React.useState("");
+  const normalizedSelectClass =
+    "w-full appearance-none rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-900 transition focus:border-gray-900/40 focus:outline-none focus:ring-4 focus:ring-gray-900/10";
+
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const user = await api("/api/me");
+        if (!mounted) return;
+        setMe(user?.user || user);
+      } catch (err) {
+        if (mounted) {
+          setStatus((prev) => ({ ...prev, error: err.message || "Failed to load account info." }));
+        }
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     let mounted = true;
@@ -35,7 +64,7 @@ export default function CompareView() {
         setLoadingJobs(true);
         const data = await api("/api/compare/jobs");
         if (!mounted) return;
-        setJobs(Array.isArray(data) ? data : []);
+        setAllJobs(Array.isArray(data) ? data : []);
       } catch (err) {
         if (mounted) setStatus((prev) => ({ ...prev, error: err.message || "Failed to load jobs." }));
       } finally {
@@ -46,6 +75,45 @@ export default function CompareView() {
       mounted = false;
     };
   }, []);
+
+  React.useEffect(() => {
+    if (!isAgency) return;
+    let mounted = true;
+    setCompaniesLoading(true);
+    setCompaniesError("");
+    (async () => {
+      try {
+        const res = await api("/api/company-profiles");
+        if (!mounted) return;
+        const list = Array.isArray(res?.profiles) ? res.profiles : [];
+        setCompanies(list);
+        const defaultProfile = list.find((p) => p.is_default) || list[0] || null;
+        setSelectedCompanyId(defaultProfile?.id ? String(defaultProfile.id) : "");
+      } catch (err) {
+        if (mounted) setCompaniesError(err.message || "Failed to load companies.");
+      } finally {
+        if (mounted) setCompaniesLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [isAgency]);
+
+  React.useEffect(() => {
+    if (!isAgency) return;
+    setSelectedJob("");
+    setCandidates([]);
+    setCandidateA("");
+    setCandidateB("");
+  }, [isAgency, selectedCompanyId]);
+
+  const jobs = React.useMemo(() => {
+    if (!isAgency || !selectedCompanyId) return allJobs;
+    return allJobs.filter(
+      (job) => String(job.company_profile_id || "") === String(selectedCompanyId)
+    );
+  }, [allJobs, isAgency, selectedCompanyId]);
 
   const handleJobChange = async (jobId) => {
     setSelectedJob(jobId);
@@ -218,25 +286,65 @@ export default function CompareView() {
 
         {emptyState ? (
           <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center text-gray-600">
-            You don’t have any jobs yet. Create a posting to start comparing candidates.
+            {isAgency
+              ? "No jobs available for the selected company. Create or select another profile to continue."
+              : "You don’t have any jobs yet. Create a posting to start comparing candidates."}
           </div>
         ) : (
           <>
-        <div className="grid gap-6 md:grid-cols-3">
+        <div className={`grid gap-6 ${isAgency ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
+          {isAgency && (
+            <div className="md:col-span-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Select Company</label>
+              {companiesLoading ? (
+                <div className="text-sm text-gray-500">Loading companies…</div>
+              ) : companiesError ? (
+                <div className="text-sm text-red-600">{companiesError}</div>
+              ) : (
+                <div className="relative">
+                  <select
+                    className={`${normalizedSelectClass} ${!companies.length ? "text-gray-400" : ""}`}
+                    value={selectedCompanyId}
+                    onChange={(e) => setSelectedCompanyId(e.target.value)}
+                  >
+                    {companies.length === 0 ? (
+                      <option value="">No companies available</option>
+                    ) : (
+                      companies.map((company) => (
+                        <option key={company.id} value={company.id}>
+                          {company.name}
+                          {company.is_default ? " (default)" : ""}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-500">
+                    ▾
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="md:col-span-1">
             <label className="block text-sm font-medium text-gray-700 mb-2">Select Job</label>
-            <select
-              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
-              value={selectedJob}
-              onChange={(e) => handleJobChange(e.target.value)}
-            >
-              <option value="">{loadingJobs ? "Loading jobs…" : "Choose a job"}</option>
-              {jobs.map((job) => (
-                <option key={job.id} value={job.id}>
-                  {job.title}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                className={`${normalizedSelectClass} ${jobs.length === 0 ? "text-gray-400" : ""}`}
+                value={selectedJob}
+                onChange={(e) => handleJobChange(e.target.value)}
+              >
+                <option value="">{loadingJobs ? "Loading jobs…" : "Choose a job"}</option>
+                {jobs.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {job.title}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-500">
+                ▾
+              </span>
+            </div>
           </div>
 
           {[{ label: "Candidate A", setter: setCandidateA, value: candidateA, other: candidateB },
@@ -244,29 +352,34 @@ export default function CompareView() {
             ({ label, setter, value, other }, idx) => (
               <div key={label}>
                 <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-                <select
-                  disabled={!selectedJob || loadingCandidates}
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900/10 disabled:bg-gray-50 disabled:text-gray-400"
-                  value={value}
-                  onChange={(e) => setter(e.target.value)}
-                >
-                  <option value="">
-                    {!selectedJob ? "Choose a job first" : loadingCandidates ? "Loading…" : "Choose candidate"}
-                  </option>
-                  {candidates.map((candidate) => (
-                    <option
-                      key={candidate.id}
-                      value={candidate.id}
-                      disabled={disableOption(candidate.id, other)}
-                    >
-                      {candidate.name}
+                <div className="relative">
+                  <select
+                    disabled={!selectedJob || loadingCandidates}
+                    className={`${normalizedSelectClass} disabled:bg-gray-50 disabled:text-gray-400`}
+                    value={value}
+                    onChange={(e) => setter(e.target.value)}
+                  >
+                    <option value="">
+                      {!selectedJob ? "Choose a job first" : loadingCandidates ? "Loading…" : "Choose candidate"}
                     </option>
-                  ))}
-                </select>
+                    {candidates.map((candidate) => (
+                      <option
+                        key={candidate.id}
+                        value={candidate.id}
+                        disabled={disableOption(candidate.id, other)}
+                      >
+                        {candidate.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-500">
+                    ▾
+                  </span>
+                </div>
               </div>
             )
           )}
-        </div>
+       </div>
 
         <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
           <label className="block text-sm font-medium text-gray-700 mb-2">

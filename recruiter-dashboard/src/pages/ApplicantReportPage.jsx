@@ -301,6 +301,7 @@ export default function ApplicantReportPage() {
     neutral: { card: "bg-gray-50 border-gray-200 text-gray-800", badge: "bg-gray-600 text-white" },
   };
   const tone = recommendationStyles[recommendation.tone] || recommendationStyles.neutral;
+  const hasMultipleViolations = violations.length > 1;
 
   return (
     <div>
@@ -342,6 +343,11 @@ export default function ApplicantReportPage() {
               </div>
               <p className="text-lg font-semibold">{recommendation.title}</p>
               <p className="text-sm mt-1 leading-relaxed">{recommendation.message}</p>
+              {hasMultipleViolations && (
+                <p className="text-xs text-rose-700 mt-3 font-medium">
+                  This candidate triggered multiple integrity violations—please review them carefully before moving forward.
+                </p>
+              )}
             </div>
             <div className="rounded-2xl border border-gray-200 bg-white px-6 py-5 shadow-sm">
               <p className="text-xs uppercase tracking-wide text-gray-500">Overall candidate score</p>
