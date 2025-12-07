@@ -5,21 +5,6 @@ import { api, API_ORIGIN, tokenStore } from "../api/client";
 
 const API = process.env.REACT_APP_API_URL || "http://localhost:4000";
 
-const Card = ({ title, value }) => (
-  <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-    <p className="text-sm text-gray-500">{title}</p>
-    <p className="text-xl font-semibold text-gray-900 mt-1">{value}</p>
-  </div>
-);
-
-const pctOrNA = (v) => {
-  if (v == null) return "N/A";
-  const n = typeof v === "number" ? v : Number(v);
-  if (!Number.isFinite(n)) return "N/A";
-  const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
-  return `${pct}/100`;
-};
-
 const ANALYSIS_METRIC_DEFINITIONS = [
   { label: "Startup Readiness", paths: ["overallStartupReadinessIndex", "overallScore", "scores.overallScore"] },
   { label: "Founder Fit", paths: ["founderFitIndex", "scores.founderFitIndex"] },
@@ -85,7 +70,6 @@ export default function ApplicantReportPage() {
     return () => { cancelled = true; };
   }, [applicantId]);
 
-  const scores = app?.ai_scores || {};
   const simSummary = app?.ai_summary || null;
 
   // Authenticated open of file (preview in new tab)
@@ -209,6 +193,56 @@ export default function ApplicantReportPage() {
   const selfieSrc = buildImageSrc(identity.selfie_data, identity.selfie_url);
   const idSrc = buildImageSrc(identity.id_data, identity.id_url);
 
+  const overallScoreValue = readAnalysisValue([
+    "overallStartupReadinessIndex",
+    "overallScore",
+    "scores.overallScore",
+    "score",
+  ]);
+  const recommendation = (() => {
+    const n = typeof overallScoreValue === "number" ? overallScoreValue : Number(overallScoreValue);
+    if (!Number.isFinite(n)) {
+      return {
+        tone: "neutral",
+        title: "Awaiting recommendation",
+        message: "We need a completed simulation analysis to provide an automated recommendation.",
+        badge: "Pending data",
+      };
+    }
+    if (n >= 80) {
+      return {
+        tone: "positive",
+        title: "Recommended to proceed",
+        message: "This candidate’s simulation signals high alignment with the role expectations.",
+        badge: "Proceed",
+      };
+    }
+    if (n >= 60) {
+      return {
+        tone: "warning",
+        title: "Worth consideration",
+        message: "Performance is mixed. Review the report to confirm fit before advancing.",
+        badge: "Review closely",
+      };
+    }
+    return {
+      tone: "negative",
+      title: "Not recommended",
+      message: "Signals suggest this candidate is unlikely to succeed in the role. Consider other applicants.",
+      badge: "Decline",
+    };
+  })();
+  const recommendationStyles = {
+    positive: { card: "bg-emerald-50 border-emerald-200 text-emerald-900", badge: "bg-emerald-600 text-white" },
+    warning: { card: "bg-amber-50 border-amber-200 text-amber-900", badge: "bg-amber-600 text-white" },
+    negative: { card: "bg-rose-50 border-rose-200 text-rose-900", badge: "bg-rose-600 text-white" },
+    neutral: { card: "bg-gray-50 border-gray-200 text-gray-800", badge: "bg-gray-600 text-white" },
+  };
+  const tone = recommendationStyles[recommendation.tone] || recommendationStyles.neutral;
+
+  const primaryReportText = app?.simulation?.summary || analysisNarrative || simSummary;
+  const showInsightNarrative = Boolean(analysisNarrative && primaryReportText !== analysisNarrative);
+
   return (
     <div>
       <div className="mb-6">
@@ -238,11 +272,27 @@ export default function ApplicantReportPage() {
         </div>
       ) : (
         <>
-          {/* Summary scores */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
-            <Card title="Business Impact" value={pctOrNA(scores.business_impact)} />
-            <Card title="Technical Accuracy" value={pctOrNA(scores.technical_accuracy)} />
-            <Card title="Communication" value={pctOrNA(scores.communication)} />
+          {/* Recommendation + score */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-10">
+            <div className={`rounded-2xl border px-6 py-5 shadow-sm ${tone.card}`}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs uppercase tracking-wide opacity-80">Recommendation</p>
+                <span className={`text-xs font-semibold px-3 py-1 rounded-full ${tone.badge}`}>
+                  {recommendation.badge}
+                </span>
+              </div>
+              <p className="text-lg font-semibold">{recommendation.title}</p>
+              <p className="text-sm mt-1 leading-relaxed">{recommendation.message}</p>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-white px-6 py-5 shadow-sm">
+              <p className="text-xs uppercase tracking-wide text-gray-500">Overall simulation score</p>
+              <p className="text-3xl font-semibold text-gray-900 mt-2">
+                {formatScoreValue(overallScoreValue)}
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                Derived from the latest simulation analysis across all responses.
+              </p>
+            </div>
           </div>
 
           {/* Candidate Details */}
@@ -298,15 +348,18 @@ export default function ApplicantReportPage() {
             </div>
           </div>
 
-          {/* Simulation Summary */}
-          <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm space-y-6">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-800 mb-4">Simulation Report</h2>
-
-              {(app.simulation?.summary || analysisNarrative || simSummary) ? (
-                <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">
-                  {app.simulation?.summary || analysisNarrative || simSummary}
-                </p>
+          <div className="space-y-8">
+            <section className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-800">Simulation Report</h2>
+                {overallScoreValue != null && (
+                  <span className="inline-flex items-center rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-600 bg-gray-50">
+                    Score: {formatScoreValue(overallScoreValue)}
+                  </span>
+                )}
+              </div>
+              {primaryReportText ? (
+                <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{primaryReportText}</p>
               ) : (
                 <p className="text-gray-700 text-sm leading-relaxed">
                   The applicant’s simulation breakdown and transcripts will appear here when your
@@ -314,126 +367,117 @@ export default function ApplicantReportPage() {
                   as the summary.
                 </p>
               )}
-            </div>
+            </section>
 
-            {/* Analysis + Identity */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Deep-dive artifacts</h3>
+            <section className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Simulation Insights</h3>
+                {rawAnalysisString && (
+                  <button
+                    type="button"
+                    onClick={() => setShowRawAnalysis((prev) => !prev)}
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-800"
+                  >
+                    {showRawAnalysis ? "Hide JSON" : "View JSON"}
+                  </button>
+                )}
+              </div>
               {loadingArtifacts ? (
-                <div className="text-sm text-gray-500">Loading artifacts…</div>
+                <p className="text-sm text-gray-500">Loading insights…</p>
               ) : artifactsErr ? (
-                <div className="text-sm text-red-600">{artifactsErr}</div>
-              ) : artifacts ? (
-                <div className="space-y-8">
-                  <section className="space-y-4">
-                    <p className="text-xs uppercase tracking-wide text-gray-500">Simulation insights</p>
-                    {analysisReport || analysisNarrative ? (
-                      <>
-                        {analysisNarrative && (
-                          <div className="rounded-xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white p-4 text-sm leading-relaxed text-gray-800 shadow-inner">
-                            {analysisNarrative}
-                          </div>
-                        )}
-                        {hasAnalysisMetrics && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {analysisMetrics.map((metric) => (
-                              <div
-                                key={metric.label}
-                                className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm"
-                              >
-                                <p className="text-xs uppercase tracking-wide text-gray-500">{metric.label}</p>
-                                <p className="text-lg font-semibold text-gray-900 mt-1">
-                                  {formatScoreValue(metric.value)}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {rawAnalysisString && (
-                          <div>
-                            <button
-                              type="button"
-                              onClick={() => setShowRawAnalysis((prev) => !prev)}
-                              className="text-xs font-medium text-blue-600 hover:text-blue-800"
-                            >
-                              {showRawAnalysis ? "Hide raw analysis JSON" : "View raw analysis JSON"}
-                            </button>
-                            {showRawAnalysis && (
-                              <pre className="mt-2 bg-gray-50 border border-gray-200 rounded-md p-4 text-xs overflow-x-auto text-gray-800">
-                                {rawAnalysisString}
-                              </pre>
-                            )}
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-sm text-gray-500">No structured analysis report has been generated yet.</p>
-                    )}
-                  </section>
-
-                  <section>
-                    <p className="text-xs uppercase tracking-wide text-gray-500 mb-3">Identity verification</p>
-                    {selfieSrc || idSrc ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-                          <div className="px-4 py-2 border-b border-gray-200 text-sm font-semibold text-gray-700">
-                            Selfie
-                          </div>
-                          {selfieSrc ? (
-                            <img src={selfieSrc} alt="Selfie verification" className="w-full object-cover" />
-                          ) : (
-                            <p className="p-4 text-sm text-gray-500">Not provided</p>
-                          )}
+                <p className="text-sm text-red-600">{artifactsErr}</p>
+              ) : analysisReport || analysisNarrative ? (
+                <div className="space-y-4">
+                  {showInsightNarrative && (
+                    <div className="rounded-xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white p-4 text-sm leading-relaxed text-gray-800 shadow-inner">
+                      {analysisNarrative}
+                    </div>
+                  )}
+                  {hasAnalysisMetrics && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {analysisMetrics.map((metric) => (
+                        <div
+                          key={metric.label}
+                          className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm"
+                        >
+                          <p className="text-xs uppercase tracking-wide text-gray-500">{metric.label}</p>
+                          <p className="text-lg font-semibold text-gray-900 mt-1">
+                            {formatScoreValue(metric.value)}
+                          </p>
                         </div>
-                        <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-                          <div className="px-4 py-2 border-b border-gray-200 text-sm font-semibold text-gray-700">
-                            Photo ID
-                          </div>
-                          {idSrc ? (
-                            <img src={idSrc} alt="ID verification" className="w-full object-cover" />
-                          ) : (
-                            <p className="p-4 text-sm text-gray-500">Not provided</p>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-500">Identity check images are not available yet.</p>
-                    )}
-                  </section>
-
-                  <section>
-                    <p className="text-xs uppercase tracking-wide text-gray-500 mb-3">Integrity monitoring</p>
-                    {violations.length ? (
-                      <ul className="space-y-3">
-                        {violations.map((violation, idx) => (
-                          <li
-                            key={violation.id || `${violation.type}-${idx}`}
-                            className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-                          >
-                            <p className="font-semibold">{formatViolationType(violation.type)}</p>
-                            <p className="text-xs text-amber-800 mt-0.5">{formatDateTime(violation.created_at)}</p>
-                            {violation.meta && (
-                              <p className="mt-1 text-xs text-amber-900">
-                                {typeof violation.meta === "string"
-                                  ? violation.meta
-                                  : JSON.stringify(violation.meta)}
-                              </p>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                        Candidate completed the simulation with no reported proctoring violations.
-                      </div>
-                    )}
-                  </section>
+                      ))}
+                    </div>
+                  )}
+                  {showRawAnalysis && rawAnalysisString && (
+                    <pre className="bg-gray-50 border border-gray-200 rounded-md p-4 text-xs overflow-x-auto text-gray-800">
+                      {rawAnalysisString}
+                    </pre>
+                  )}
                 </div>
               ) : (
-                <p className="text-sm text-gray-500">No artifacts available.</p>
+                <p className="text-sm text-gray-500">No structured analysis report has been generated yet.</p>
               )}
-            </div>
+            </section>
 
+            <section className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+              <p className="text-sm font-semibold text-gray-900 mb-3">Identity Verification</p>
+              {loadingArtifacts ? (
+                <p className="text-sm text-gray-500">Loading identity images…</p>
+              ) : selfieSrc || idSrc ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+                    <div className="px-4 py-2 border-b border-gray-200 text-sm font-semibold text-gray-700">
+                      Selfie
+                    </div>
+                    {selfieSrc ? (
+                      <img src={selfieSrc} alt="Selfie verification" className="w-full object-cover" />
+                    ) : (
+                      <p className="p-4 text-sm text-gray-500">Not provided</p>
+                    )}
+                  </div>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+                    <div className="px-4 py-2 border-b border-gray-200 text-sm font-semibold text-gray-700">
+                      Photo ID
+                    </div>
+                    {idSrc ? (
+                      <img src={idSrc} alt="ID verification" className="w-full object-cover" />
+                    ) : (
+                      <p className="p-4 text-sm text-gray-500">Not provided</p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">Identity check images are not available yet.</p>
+              )}
+            </section>
+
+            <section className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+              <p className="text-sm font-semibold text-gray-900 mb-3">Integrity Monitoring</p>
+              {loadingArtifacts ? (
+                <p className="text-sm text-gray-500">Loading proctoring events…</p>
+              ) : violations.length ? (
+                <ul className="space-y-3">
+                  {violations.map((violation, idx) => (
+                    <li
+                      key={violation.id || `${violation.type}-${idx}`}
+                      className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                    >
+                      <p className="font-semibold">{formatViolationType(violation.type)}</p>
+                      <p className="text-xs text-amber-800 mt-0.5">{formatDateTime(violation.created_at)}</p>
+                      {violation.meta && (
+                        <p className="mt-1 text-xs text-amber-900">
+                          {typeof violation.meta === "string" ? violation.meta : JSON.stringify(violation.meta)}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  Candidate completed the simulation with no reported proctoring violations.
+                </div>
+              )}
+            </section>
             {(app.files?.career_card || app.files?.resume) && (
               <div className="mt-6">
                 <h3 className="text-sm font-semibold text-gray-900 mb-2">Submitted files</h3>
