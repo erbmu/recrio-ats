@@ -20,6 +20,7 @@ import {
 import {
   __testables as careerCardTestables,
   fetchCareerCardReportsBulk,
+  fetchCareerCardReport,
   calculateOverallScore,
   ensureCareerCardReport,
 } from "../../lib/careerCardReportService.mjs";
@@ -693,11 +694,21 @@ r.get("/:id/simulation/artifacts", requireAuth(), async (req, res, next) => {
       simulationId: row.simulation_row_id,
       applicationId: row.id,
     });
+    let careerCardReport = null;
+    try {
+      careerCardReport = await fetchCareerCardReport(String(row.id));
+    } catch (err) {
+      console.warn("[applications.artifacts] failed to fetch career card report", {
+        applicationId: row.id,
+        error: err?.message || err,
+      });
+    }
     return res.json({
       simulation_key: simulationKey,
       analysis_report: artifacts.analysis_report,
       identity: artifacts.identity,
       violations: artifacts.violations || [],
+      career_card_report: careerCardReport,
     });
   } catch (e) {
     routeDebug("error", { error: e?.message || e });

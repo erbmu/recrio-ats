@@ -18,6 +18,45 @@ const ANALYSIS_METRIC_DEFINITIONS = [
   { label: "Creativity", paths: ["creativityInnovationIndex", "scores.creativityInnovationIndex"] },
 ];
 
+const CAREER_CARD_CATEGORY_DEFS = [
+  { key: "technicalSkills", label: "Technical Skills" },
+  { key: "experience", label: "Experience" },
+  { key: "culturalFit", label: "Cultural Fit" },
+  { key: "projectAlignment", label: "Project Alignment" },
+];
+
+const normalizeScore = (value) => {
+  if (value == null) return null;
+  const num = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(num)) return null;
+  return num;
+};
+
+const computeCompositeScore = (simulationScore, careerCardScore) => {
+  const ws = 0.7;
+  const wc = 0.3;
+  const sim = normalizeScore(simulationScore);
+  const card = normalizeScore(careerCardScore);
+  const Is = sim != null ? 1 : 0;
+  const Ic = card != null ? 1 : 0;
+  const denom = Is * ws + Ic * wc;
+  if (denom === 0) {
+    return { score: null, confidence: 0 };
+  }
+  const transform = (value, gamma) => {
+    const clamped = Math.max(0, Math.min(100, value ?? 0));
+    return 100 * Math.pow(clamped / 100, gamma);
+  };
+  const numerator =
+    (Is ? ws * transform(sim, 1.1) : 0) + (Ic ? wc * transform(card, 1.0) : 0);
+  const score = numerator / denom;
+  const confidence = denom / (ws + wc);
+  return {
+    score: Number(score.toFixed(2)),
+    confidence: Number(confidence.toFixed(4)),
+  };
+};
+
 export default function ApplicantReportPage() {
   const { jobId, applicantId } = useParams();
   const navigate = useNavigate();
@@ -156,11 +195,36 @@ export default function ApplicantReportPage() {
       : JSON.stringify(artifacts.analysis_report, null, 2)
     : "";
 
+  const careerCardReport = artifacts?.career_card_report || null;
+  const careerCardScore = normalizeScore(careerCardReport?.overall_score);
+  const careerCardCategories = CAREER_CARD_CATEGORY_DEFS.map((def) => ({
+    key: def.key,
+    label: def.label,
+    data: careerCardReport?.category_scores?.[def.key] || null,
+  }));
+  const careerCardStrengths = Array.isArray(careerCardReport?.strengths)
+    ? careerCardReport.strengths.filter((item) => typeof item === "string" && item.trim())
+    : [];
+  const careerCardImprovements = Array.isArray(careerCardReport?.improvements)
+    ? careerCardReport.improvements.filter((item) => typeof item === "string" && item.trim())
+    : [];
+  const careerCardFeedback = typeof careerCardReport?.overall_feedback === "string"
+    ? careerCardReport.overall_feedback.trim()
+    : "";
+  const careerCardGeneratedAt = careerCardReport?.generated_at || careerCardReport?.created_at || null;
+
   const analysisMetrics = ANALYSIS_METRIC_DEFINITIONS.map((def) => ({
     label: def.label,
     value: readAnalysisValue(def.paths),
   }));
   const hasAnalysisMetrics = analysisMetrics.some((metric) => metric.value != null);
+
+  const overallScoreValue = readAnalysisValue([
+    "overallStartupReadinessIndex",
+    "overallScore",
+    "scores.overallScore",
+    "score",
+  ]);
 
   const formatScoreValue = (value) => {
     if (value == null) return "—";
@@ -193,23 +257,21 @@ export default function ApplicantReportPage() {
   const selfieSrc = buildImageSrc(identity.selfie_data, identity.selfie_url);
   const idSrc = buildImageSrc(identity.id_data, identity.id_url);
 
-  const overallScoreValue = readAnalysisValue([
-    "overallStartupReadinessIndex",
-    "overallScore",
-    "scores.overallScore",
-    "score",
-  ]);
+  const simulationScore = normalizeScore(overallScoreValue);
+  const combinedScore = computeCompositeScore(simulationScore, careerCardScore);
+  const primaryReportText = app?.simulation?.summary || analysisNarrative || simSummary;
+  const showInsightNarrative = Boolean(analysisNarrative && primaryReportText !== analysisNarrative);
+
   const recommendation = (() => {
-    const n = typeof overallScoreValue === "number" ? overallScoreValue : Number(overallScoreValue);
-    if (!Number.isFinite(n)) {
+    if (simulationScore == null) {
       return {
         tone: "neutral",
-        title: "Awaiting recommendation",
-        message: "We need a completed simulation analysis to provide an automated recommendation.",
-        badge: "Pending data",
+        title: "Await simulation completion",
+        message: "Hold off on a decision until the candidate submits their simulation responses.",
+        badge: "Awaiting simulation",
       };
     }
-    if (n >= 80) {
+    if (simulationScore >= 80) {
       return {
         tone: "positive",
         title: "Recommended to proceed",
@@ -217,7 +279,7 @@ export default function ApplicantReportPage() {
         badge: "Proceed",
       };
     }
-    if (n >= 60) {
+    if (simulationScore >= 60) {
       return {
         tone: "warning",
         title: "Worth consideration",
@@ -239,9 +301,6 @@ export default function ApplicantReportPage() {
     neutral: { card: "bg-gray-50 border-gray-200 text-gray-800", badge: "bg-gray-600 text-white" },
   };
   const tone = recommendationStyles[recommendation.tone] || recommendationStyles.neutral;
-
-  const primaryReportText = app?.simulation?.summary || analysisNarrative || simSummary;
-  const showInsightNarrative = Boolean(analysisNarrative && primaryReportText !== analysisNarrative);
 
   return (
     <div>
@@ -285,12 +344,12 @@ export default function ApplicantReportPage() {
               <p className="text-sm mt-1 leading-relaxed">{recommendation.message}</p>
             </div>
             <div className="rounded-2xl border border-gray-200 bg-white px-6 py-5 shadow-sm">
-              <p className="text-xs uppercase tracking-wide text-gray-500">Overall simulation score</p>
+              <p className="text-xs uppercase tracking-wide text-gray-500">Overall candidate score</p>
               <p className="text-3xl font-semibold text-gray-900 mt-2">
-                {formatScoreValue(overallScoreValue)}
+                {formatScoreValue(combinedScore.score)}
               </p>
               <p className="text-sm text-gray-500 mt-1">
-                Derived from the latest simulation analysis across all responses.
+                Based on simulation ({formatScoreValue(simulationScore)}) and career card ({formatScoreValue(careerCardScore)}).
               </p>
             </div>
           </div>
@@ -416,6 +475,76 @@ export default function ApplicantReportPage() {
                 </div>
               ) : (
                 <p className="text-sm text-gray-500">No structured analysis report has been generated yet.</p>
+              )}
+            </section>
+
+            <section className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Career Card Assessment</h3>
+                {careerCardScore != null && (
+                  <span className="inline-flex items-center rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-600 bg-gray-50">
+                    Score: {formatScoreValue(careerCardScore)}
+                  </span>
+                )}
+              </div>
+              {loadingArtifacts ? (
+                <p className="text-sm text-gray-500">Loading career card report…</p>
+              ) : artifactsErr ? (
+                <p className="text-sm text-red-600">{artifactsErr}</p>
+              ) : careerCardReport ? (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {careerCardCategories.map((category) => (
+                      <div key={category.key} className="rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">{category.label}</p>
+                        <p className="text-lg font-semibold text-gray-900 mt-1">
+                          {formatScoreValue(category.data?.score)}
+                        </p>
+                        {category.data?.feedback && (
+                          <p className="text-xs text-gray-600 mt-1">{category.data.feedback}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {careerCardFeedback && (
+                    <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm leading-relaxed text-indigo-900 shadow-inner">
+                      {careerCardFeedback}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-emerald-800 font-semibold mb-2">Strengths</p>
+                      {careerCardStrengths.length ? (
+                        <ul className="list-disc list-inside text-sm text-emerald-900 space-y-1">
+                          {careerCardStrengths.map((item, idx) => (
+                            <li key={`${item}-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-emerald-900">No standout strengths recorded.</p>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-rose-100 bg-rose-50 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-rose-800 font-semibold mb-2">Improvements</p>
+                      {careerCardImprovements.length ? (
+                        <ul className="list-disc list-inside text-sm text-rose-900 space-y-1">
+                          {careerCardImprovements.map((item, idx) => (
+                            <li key={`${item}-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-rose-900">No gaps were flagged.</p>
+                      )}
+                    </div>
+                  </div>
+                  {careerCardGeneratedAt && (
+                    <p className="text-xs text-gray-400">
+                      Generated {new Date(careerCardGeneratedAt).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">Career card report is not available yet.</p>
               )}
             </section>
 
