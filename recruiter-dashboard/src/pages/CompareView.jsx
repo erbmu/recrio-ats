@@ -300,27 +300,25 @@ export default function CompareView() {
                 <div className="text-sm text-gray-500">Loading companies…</div>
               ) : companiesError ? (
                 <div className="text-sm text-red-600">{companiesError}</div>
+              ) : companies.length === 0 ? (
+                <div className="text-sm text-gray-500">No companies available</div>
               ) : (
-                <div className="relative">
-                  <select
-                    className={`${normalizedSelectClass} ${!companies.length ? "text-gray-400" : ""}`}
-                    value={selectedCompanyId}
-                    onChange={(e) => setSelectedCompanyId(e.target.value)}
-                  >
-                    {companies.length === 0 ? (
-                      <option value="">No companies available</option>
-                    ) : (
-                      companies.map((company) => (
-                        <option key={company.id} value={company.id}>
-                          {company.name}
-                          {company.is_default ? " (default)" : ""}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-500">
-                    ▾
-                  </span>
+                <div className="flex flex-wrap gap-2">
+                  {companies.map((company) => (
+                    <button
+                      type="button"
+                      key={company.id}
+                      onClick={() => setSelectedCompanyId(String(company.id))}
+                      className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
+                        String(company.id) === String(selectedCompanyId)
+                          ? "bg-gray-900 text-white shadow-sm"
+                          : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      {company.name}
+                      {company.is_default ? " (default)" : ""}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
