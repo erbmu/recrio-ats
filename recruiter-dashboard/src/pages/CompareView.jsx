@@ -169,6 +169,8 @@ export default function CompareView() {
   const disableOption = (id, other) => other && other === id;
 
   const emptyState = !loadingJobs && jobs.length === 0;
+  const selectClass =
+    "w-full appearance-none rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 transition focus:border-gray-900/40 focus:outline-none focus:ring-4 focus:ring-gray-900/10 disabled:bg-gray-50 disabled:text-gray-400";
   const parsedReport = React.useMemo(() => {
     const report = stringOrJson(status.result?.report);
     if (!report) return null;
@@ -329,18 +331,23 @@ export default function CompareView() {
         <div className="grid gap-6 md:grid-cols-3">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Select Job</label>
-            <select
-              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
-              value={selectedJob}
-              onChange={(e) => handleJobChange(e.target.value)}
-            >
-              <option value="">{loadingJobs ? "Loading jobs…" : "Choose a job"}</option>
-              {jobs.map((job) => (
-                <option key={job.id} value={job.id}>
-                  {job.title}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                className={selectClass}
+                value={selectedJob}
+                onChange={(e) => handleJobChange(e.target.value)}
+              >
+                <option value="">{loadingJobs ? "Loading jobs…" : "Choose a job"}</option>
+                {jobs.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {job.title}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-500">
+                ▾
+              </span>
+            </div>
           </div>
 
           {[{ label: "Candidate A", setter: setCandidateA, value: candidateA, other: candidateB },
@@ -348,25 +355,30 @@ export default function CompareView() {
             ({ label, setter, value, other }, idx) => (
               <div key={label}>
                 <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-                <select
-                  disabled={!selectedJob || loadingCandidates}
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900/10 disabled:bg-gray-50 disabled:text-gray-400"
-                  value={value}
-                  onChange={(e) => setter(e.target.value)}
-                >
-                  <option value="">
-                    {!selectedJob ? "Choose a job first" : loadingCandidates ? "Loading…" : "Choose candidate"}
-                  </option>
-                  {candidates.map((candidate) => (
-                    <option
-                      key={candidate.id}
-                      value={candidate.id}
-                      disabled={disableOption(candidate.id, other)}
-                    >
-                      {candidate.name}
+                <div className="relative">
+                  <select
+                    disabled={!selectedJob || loadingCandidates}
+                    className={selectClass}
+                    value={value}
+                    onChange={(e) => setter(e.target.value)}
+                  >
+                    <option value="">
+                      {!selectedJob ? "Choose a job first" : loadingCandidates ? "Loading…" : "Choose candidate"}
                     </option>
-                  ))}
-                </select>
+                    {candidates.map((candidate) => (
+                      <option
+                        key={candidate.id}
+                        value={candidate.id}
+                        disabled={disableOption(candidate.id, other)}
+                      >
+                        {candidate.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-500">
+                    ▾
+                  </span>
+                </div>
               </div>
             )
           )}

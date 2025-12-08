@@ -525,7 +525,7 @@ const JobsPage = () => {
                   </label>
                   <div className="relative mt-1">
                     <select
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 bg-white"
+                      className="w-full appearance-none rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-900 transition focus:border-gray-900/40 focus:outline-none focus:ring-4 focus:ring-gray-900/10"
                       value={selectedProfileId || ""}
                       onChange={(e) => handleSelectProfile(e.target.value)}
                     >
@@ -536,6 +536,9 @@ const JobsPage = () => {
                         </option>
                       ))}
                     </select>
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-500">
+                      ▾
+                    </span>
                   </div>
                 </div>
                 <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
