@@ -36,8 +36,6 @@ export default function CompareView() {
   const [companiesLoading, setCompaniesLoading] = React.useState(false);
   const [companiesError, setCompaniesError] = React.useState("");
   const [selectedCompanyId, setSelectedCompanyId] = React.useState("");
-  const normalizedSelectClass =
-    "w-full appearance-none rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-900 transition focus:border-gray-900/40 focus:outline-none focus:ring-4 focus:ring-gray-900/10";
 
   React.useEffect(() => {
     let mounted = true;
@@ -284,30 +282,25 @@ export default function CompareView() {
           </p>
         </div>
 
-        {emptyState ? (
-          <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center text-gray-600">
-            {isAgency
-              ? "No jobs available for the selected company. Create or select another profile to continue."
-              : "You don’t have any jobs yet. Create a posting to start comparing candidates."}
-          </div>
-        ) : (
-          <>
-        <div className={`grid gap-6 ${isAgency ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
-          {isAgency && (
-            <div className="md:col-span-1">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Company</label>
+        {isAgency && (
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Filter by company</p>
+                <p className="text-xs text-gray-500">Choose which client’s jobs you want to compare.</p>
+              </div>
               {companiesLoading ? (
-                <div className="text-sm text-gray-500">Loading companies…</div>
+                <p className="text-sm text-gray-500">Loading companies…</p>
               ) : companiesError ? (
-                <div className="text-sm text-red-600">{companiesError}</div>
+                <p className="text-sm text-red-600">{companiesError}</p>
               ) : companies.length === 0 ? (
-                <div className="text-sm text-gray-500">No companies available</div>
+                <p className="text-sm text-gray-500">No companies available.</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {companies.map((company) => (
                     <button
-                      type="button"
                       key={company.id}
+                      type="button"
                       onClick={() => setSelectedCompanyId(String(company.id))}
                       className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
                         String(company.id) === String(selectedCompanyId)
@@ -322,27 +315,32 @@ export default function CompareView() {
                 </div>
               )}
             </div>
-          )}
+          </div>
+        )}
 
-          <div className="md:col-span-1">
+        {emptyState ? (
+          <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center text-gray-600">
+            {isAgency
+              ? "No jobs available for the selected company. Create or select another profile to continue."
+              : "You don’t have any jobs yet. Create a posting to start comparing candidates."}
+          </div>
+        ) : (
+          <>
+        <div className="grid gap-6 md:grid-cols-3">
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Select Job</label>
-            <div className="relative">
-              <select
-                className={`${normalizedSelectClass} ${jobs.length === 0 ? "text-gray-400" : ""}`}
-                value={selectedJob}
-                onChange={(e) => handleJobChange(e.target.value)}
-              >
-                <option value="">{loadingJobs ? "Loading jobs…" : "Choose a job"}</option>
-                {jobs.map((job) => (
-                  <option key={job.id} value={job.id}>
-                    {job.title}
-                  </option>
-                ))}
-              </select>
-              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-500">
-                ▾
-              </span>
-            </div>
+            <select
+              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900/10"
+              value={selectedJob}
+              onChange={(e) => handleJobChange(e.target.value)}
+            >
+              <option value="">{loadingJobs ? "Loading jobs…" : "Choose a job"}</option>
+              {jobs.map((job) => (
+                <option key={job.id} value={job.id}>
+                  {job.title}
+                </option>
+              ))}
+            </select>
           </div>
 
           {[{ label: "Candidate A", setter: setCandidateA, value: candidateA, other: candidateB },
@@ -350,30 +348,25 @@ export default function CompareView() {
             ({ label, setter, value, other }, idx) => (
               <div key={label}>
                 <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-                <div className="relative">
-                  <select
-                    disabled={!selectedJob || loadingCandidates}
-                    className={`${normalizedSelectClass} disabled:bg-gray-50 disabled:text-gray-400`}
-                    value={value}
-                    onChange={(e) => setter(e.target.value)}
-                  >
-                    <option value="">
-                      {!selectedJob ? "Choose a job first" : loadingCandidates ? "Loading…" : "Choose candidate"}
+                <select
+                  disabled={!selectedJob || loadingCandidates}
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-900/10 disabled:bg-gray-50 disabled:text-gray-400"
+                  value={value}
+                  onChange={(e) => setter(e.target.value)}
+                >
+                  <option value="">
+                    {!selectedJob ? "Choose a job first" : loadingCandidates ? "Loading…" : "Choose candidate"}
+                  </option>
+                  {candidates.map((candidate) => (
+                    <option
+                      key={candidate.id}
+                      value={candidate.id}
+                      disabled={disableOption(candidate.id, other)}
+                    >
+                      {candidate.name}
                     </option>
-                    {candidates.map((candidate) => (
-                      <option
-                        key={candidate.id}
-                        value={candidate.id}
-                        disabled={disableOption(candidate.id, other)}
-                      >
-                        {candidate.name}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-500">
-                    ▾
-                  </span>
-                </div>
+                  ))}
+                </select>
               </div>
             )
           )}

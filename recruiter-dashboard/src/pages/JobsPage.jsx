@@ -523,22 +523,19 @@ const JobsPage = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Active company
                   </label>
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {profiles.map((p) => (
-                      <button
-                        type="button"
-                        key={p.id}
-                        onClick={() => handleSelectProfile(p.id)}
-                        className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
-                          p.id === selectedProfileId
-                            ? "bg-gray-900 text-white shadow-sm"
-                            : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
-                        }`}
-                      >
-                        {p.name}
-                        {p.is_default ? " (default)" : ""}
-                      </button>
-                    ))}
+                  <div className="relative mt-1">
+                    <select
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10 bg-white"
+                      value={selectedProfileId || ""}
+                      onChange={(e) => handleSelectProfile(e.target.value)}
+                    >
+                      {profiles.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                          {p.is_default ? " (default)" : ""}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
