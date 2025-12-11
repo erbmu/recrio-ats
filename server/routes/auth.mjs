@@ -2,6 +2,7 @@ import express from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { PrismaClient } from "@prisma/client";
+import { z } from "zod";
 import { auth } from "../middleware/auth.mjs";
 import { db } from "../db.mjs";
 
@@ -247,6 +248,75 @@ router.get("/me", auth, async (req, res) => {
   }
 
   res.json({ ...u, recruiter_type: recruiterType });
+});
+
+const UpdateProfileSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(160),
+  email: z.string().trim().toLowerCase().email("Enter a valid email address"),
+});
+
+router.put("/me", auth, async (req, res) => {
+  const parsed = UpdateProfileSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    const issue = parsed.error.issues?.[0];
+    return res.status(400).json({ error: issue?.message || "invalid_payload" });
+  }
+  const { name, email } = parsed.data;
+  const id = BigInt(req.user.id);
+
+  const existing = await prisma.users.findFirst({
+    where: {
+      email,
+      NOT: { id },
+    },
+    select: { id: true },
+  });
+  if (existing) {
+    return res.status(400).json({ error: "Email is already in use by another user." });
+  }
+
+  const updated = await prisma.users.update({
+    where: { id },
+    data: { name, email },
+    select: { id: true, name: true, email: true, role: true, org_id: true },
+  });
+
+  res.json({ user: updated });
+});
+
+const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(8, "Current password is required"),
+  newPassword: z.string().min(8, "New password must be at least 8 characters"),
+});
+
+router.post("/me/password", auth, async (req, res) => {
+  const parsed = ChangePasswordSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    const issue = parsed.error.issues?.[0];
+    return res.status(400).json({ error: issue?.message || "invalid_payload" });
+  }
+  const { currentPassword, newPassword } = parsed.data;
+  const id = BigInt(req.user.id);
+
+  const user = await prisma.users.findUnique({
+    where: { id },
+    select: { password_hash: true },
+  });
+  if (!user?.password_hash) {
+    return res.status(400).json({ error: "Password cannot be updated for this user." });
+  }
+
+  const ok = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!ok) {
+    return res.status(400).json({ error: "Current password is incorrect." });
+  }
+
+  const password_hash = await bcrypt.hash(newPassword, 10);
+  await prisma.users.update({
+    where: { id },
+    data: { password_hash },
+  });
+  res.json({ updated: true });
 });
 
 export default router;

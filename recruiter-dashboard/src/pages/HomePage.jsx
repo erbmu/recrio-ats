@@ -209,6 +209,11 @@ export default function HomePage() {
   const [companyDesc, setCompanyDesc] = useState("");
   const [savingDesc, setSavingDesc] = useState(false);
   const [loadingOrg, setLoadingOrg] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profileForm, setProfileForm] = useState({ name: "", email: "" });
+  const [profileStatus, setProfileStatus] = useState({ saving: false, message: "", error: "" });
+  const [passwordForm, setPasswordForm] = useState({ current: "", next: "", confirm: "" });
+  const [passwordStatus, setPasswordStatus] = useState({ saving: false, message: "", error: "" });
 
   useEffect(() => {
     let cancelled = false;
@@ -286,17 +291,93 @@ export default function HomePage() {
   const fmtAvg = (v) => (v == null ? "—" : `${Math.round(v)}%`);
   const isAgency = (me?.recruiter_type || me?.recruiterType) === "agency";
 
+  useEffect(() => {
+    if (!me) return;
+    setProfileForm({
+      name: me.name || "",
+      email: me.email || "",
+    });
+  }, [me]);
+
+  const handleProfileChange = (e) => {
+    const { name, value } = e.target;
+    setProfileForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleProfileSubmit = async (e) => {
+    e.preventDefault();
+    setProfileStatus({ saving: true, message: "", error: "" });
+    try {
+      const updated = await api("/api/me", {
+        method: "PUT",
+        body: {
+          name: profileForm.name.trim(),
+          email: profileForm.email.trim(),
+        },
+      });
+      if (updated?.user) setMe((prev) => ({ ...prev, ...updated.user }));
+      setProfileStatus({ saving: false, message: "Profile updated successfully.", error: "" });
+    } catch (err) {
+      setProfileStatus({
+        saving: false,
+        message: "",
+        error: err?.message || "Failed to update profile.",
+      });
+    }
+  };
+
+  const handlePasswordChange = (e) => {
+    const { name, value } = e.target;
+    setPasswordForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
+    if (passwordForm.next !== passwordForm.confirm) {
+      setPasswordStatus({
+        saving: false,
+        message: "",
+        error: "New passwords do not match.",
+      });
+      return;
+    }
+    setPasswordStatus({ saving: true, message: "", error: "" });
+    try {
+      await api("/api/me/password", {
+        method: "POST",
+        body: { currentPassword: passwordForm.current, newPassword: passwordForm.next },
+      });
+      setPasswordStatus({ saving: false, message: "Password updated successfully.", error: "" });
+      setPasswordForm({ current: "", next: "", confirm: "" });
+    } catch (err) {
+      setPasswordStatus({
+        saving: false,
+        message: "",
+        error: err?.message || "Failed to update password.",
+      });
+    }
+  };
+
   return (
     <div className="space-y-10">
-      <div>
-        <h1 className="text-3xl font-semibold text-gray-900 mb-2">
-          Welcome, {first} 👋
-        </h1>
-        <p className="text-gray-600 max-w-2xl">
-          Recrio helps recruiters evaluate candidates through AI-driven resume
-          analysis and realistic simulations. Here's an overview of your current
-          activity.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold text-gray-900 mb-2">
+            Welcome, {first} 👋
+          </h1>
+          <p className="text-gray-600 max-w-2xl">
+            Recrio helps recruiters evaluate candidates through AI-driven resume
+            analysis and realistic simulations. Here's an overview of your current
+            activity.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          className="inline-flex items-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:border-gray-400 hover:text-gray-900"
+        >
+          Settings
+        </button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -323,6 +404,124 @@ export default function HomePage() {
           </p>
         </div>
       </div>
+
+      {settingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 py-6">
+          <div className="relative w-full max-w-4xl rounded-2xl bg-white p-6 shadow-2xl">
+            <button
+              type="button"
+              onClick={() => {
+                setProfileStatus({ saving: false, message: "", error: "" });
+                setPasswordStatus({ saving: false, message: "", error: "" });
+                setSettingsOpen(false);
+              }}
+              className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+            <h2 className="text-xl font-semibold text-gray-900 mb-1">Account Settings</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              Update your personal details and keep your password secure.
+            </p>
+            <div className="grid gap-6 md:grid-cols-2">
+              <form onSubmit={handleProfileSubmit} className="space-y-4 border rounded-xl p-4">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Personal information</p>
+                  <p className="text-xs text-gray-500">Update your name and work email.</p>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-700">Name</label>
+                  <input
+                    name="name"
+                    value={profileForm.name}
+                    onChange={handleProfileChange}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                    maxLength={160}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-700">Email</label>
+                  <input
+                    name="email"
+                    type="email"
+                    value={profileForm.email}
+                    onChange={handleProfileChange}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                    required
+                  />
+                </div>
+                {profileStatus.error && (
+                  <p className="text-sm text-red-600">{profileStatus.error}</p>
+                )}
+                {profileStatus.message && (
+                  <p className="text-sm text-emerald-600">{profileStatus.message}</p>
+                )}
+                <button
+                  type="submit"
+                  disabled={profileStatus.saving}
+                  className="w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-60"
+                >
+                  {profileStatus.saving ? "Saving…" : "Save profile"}
+                </button>
+              </form>
+
+              <form onSubmit={handlePasswordSubmit} className="space-y-4 border rounded-xl p-4">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Change password</p>
+                  <p className="text-xs text-gray-500">Passwords must be at least 8 characters long.</p>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-700">Current password</label>
+                  <input
+                    name="current"
+                    type="password"
+                    value={passwordForm.current}
+                    onChange={handlePasswordChange}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-700">New password</label>
+                  <input
+                    name="next"
+                    type="password"
+                    value={passwordForm.next}
+                    onChange={handlePasswordChange}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-700">Confirm new password</label>
+                  <input
+                    name="confirm"
+                    type="password"
+                    value={passwordForm.confirm}
+                    onChange={handlePasswordChange}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+                    required
+                  />
+                </div>
+                {passwordStatus.error && (
+                  <p className="text-sm text-red-600">{passwordStatus.error}</p>
+                )}
+                {passwordStatus.message && (
+                  <p className="text-sm text-emerald-600">{passwordStatus.message}</p>
+                )}
+                <button
+                  type="submit"
+                  disabled={passwordStatus.saving}
+                  className="w-full rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-60"
+                >
+                  {passwordStatus.saving ? "Updating…" : "Update password"}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 h-72">
