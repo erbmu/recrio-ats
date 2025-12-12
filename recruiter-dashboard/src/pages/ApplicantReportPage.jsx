@@ -607,6 +607,10 @@ export default function ApplicantReportPage() {
                     </li>
                   ))}
                 </ul>
+              ) : simulationScore == null && !violations.length ? (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                  Awaiting simulation. Integrity checks will display once the candidate completes their exercise.
+                </div>
               ) : (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                   Candidate completed the simulation with no reported proctoring violations.
