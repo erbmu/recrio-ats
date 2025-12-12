@@ -274,7 +274,7 @@ export default function ApplyPage() {
     const ccFile = fd.get("careerCard");
     const cvFile = fd.get("resume");
     const ccErr = ccFile && ccFile.name ? validateFile(ccFile) : "";
-    const cvErr = cvFile && cvFile.name ? validateFile(cvFile) : "";
+    const cvErr = cvFile && cvFile.name ? validateFile(cvFile) : "Resume is required.";
     if (ccErr) fieldErrs.careerCard = ccErr;
     if (cvErr) fieldErrs.resume = cvErr;
 
@@ -628,7 +628,7 @@ export default function ApplyPage() {
                         <div>
                           <div className="text-sm font-medium text-zinc-900">Career Card (optional)</div>
                           <div className="text-xs text-zinc-500">
-                            PDF or JSON. Max 8MB. Drag & drop or use the button.
+                            PDF, DOC/DOCX, or similar. Max 8MB. Drag & drop or use the button.
                           </div>
                           {ccPreview && <div className="mt-1 text-xs text-zinc-600">{ccPreview}</div>}
                         </div>
@@ -668,7 +668,7 @@ export default function ApplyPage() {
                           </svg>
                         </div>
                         <div>
-                          <div className="text-sm font-medium text-zinc-900">Resume (optional)</div>
+                          <div className="text-sm font-medium text-zinc-900">Resume <span className="text-red-500">*</span></div>
                           <div className="text-xs text-zinc-500">
                             PDF, DOC, or DOCX. Max 8MB. Drag & drop or use the button.
                           </div>
