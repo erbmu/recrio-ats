@@ -384,6 +384,10 @@ export default function ApplyPage() {
                   <span className="font-medium text-zinc-900">{job.title}</span>
                   {companyName ? ` at ${companyName}` : ""}. We’ll be in touch soon.
                 </p>
+                <p className="mt-4 text-sm text-zinc-600">
+                  Please keep an eye on your inbox for the online assessment (simulation) email and complete it
+                  promptly—candidates who finish the simulation are prioritized for review.
+                </p>
               </div>
             </div>
             <a
