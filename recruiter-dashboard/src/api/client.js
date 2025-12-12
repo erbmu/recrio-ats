@@ -162,7 +162,6 @@ export async function api(path, { method = "GET", body, headers } = {}) {
     });
   } catch (networkErr) {
     console.error("[CLI][API] network error", networkErr);
-    forceLogout("Connection lost. Please sign in again.");
     throw new Error("Network error");
   }
 
@@ -176,8 +175,6 @@ export async function api(path, { method = "GET", body, headers } = {}) {
     const status = res.status;
     if (status === 401 || status === 403) {
       forceLogout("Your session has expired. Please sign in again.");
-    } else if (status >= 500) {
-      forceLogout("We hit a server issue. Please sign in again.");
     }
     const msg = (data && (data.error || data.message)) || text || `HTTP ${status}`;
     const err = new Error(status >= 500 ? "Server error" : msg);
