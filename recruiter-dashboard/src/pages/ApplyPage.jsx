@@ -601,7 +601,7 @@ export default function ApplyPage() {
                 <p className="mt-2 text-sm text-zinc-600">
                   Need a Career Card?{" "}
                   <a
-                    href="http://careercard.recrio-ai.com"
+                    href="https://career-card.onrender.com"
                     target="_blank"
                     rel="noreferrer"
                     className="text-zinc-900 underline-offset-2 hover:underline"
